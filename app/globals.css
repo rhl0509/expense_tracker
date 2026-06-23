@@ -1,26 +1,204 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ── Bloomberg Terminal Design System ──────────────────────────────── */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Outfit', 'JetBrains Mono', monospace;
+
+  --color-lime:     #c6f24e;
+  --color-income:   #10b981;
+  --color-expense:  #f43f5e;
+  --color-up:       #10b981;
+  --color-down:     #f43f5e;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ── FOUC Prevention ───────────────────────────────────────────────── */
+html { visibility: hidden; }
+html.theme-ready { visibility: visible; }
+
+/* ── Theme tokens ──────────────────────────────────────────────────── */
+:root {
+  --lime: #c6f24e;
+  --income: #10b981;
+  --expense: #f43f5e;
+}
+
+[data-theme="dark"] {
+  --body-bg:      #0d0f12;
+  --nav-bg:       #0d0f12;
+  --nav-border:   rgba(255,255,255,0.05);
+  --card-bg:      #13151a;
+  --card-border:  rgba(255,255,255,0.06);
+  --card-shadow:  0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.2);
+  --accent-soft:  rgba(198,242,78,0.08);
+  --text:         #e8eaed;
+  --text-2:       #9aa0ab;
+  --text-3:       #606570;
+  --text-inv:     #0d0f12;
+  --accent:       #c6f24e;
+  --input-bg:     rgba(255,255,255,0.04);
+  --input-border: rgba(255,255,255,0.1);
+  --hover-bg:     rgba(255,255,255,0.04);
+  --danger:       #f43f5e;
+  --success:      #10b981;
+  --warn:         #f59e0b;
+}
+
+[data-theme="light"] {
+  --body-bg:      #f4f5f7;
+  --nav-bg:       #ffffff;
+  --nav-border:   rgba(0,0,0,0.06);
+  --card-bg:      #ffffff;
+  --card-border:  rgba(0,0,0,0.06);
+  --card-shadow:  0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+  --accent-soft:  rgba(17,24,39,0.05);
+  --text:         #111827;
+  --text-2:       #374151;
+  --text-3:       #9ca3af;
+  --text-inv:     #ffffff;
+  --accent:       #111827;
+  --input-bg:     #ffffff;
+  --input-border: rgba(0,0,0,0.12);
+  --hover-bg:     rgba(0,0,0,0.03);
+  --danger:       #f43f5e;
+  --success:      #10b981;
+  --warn:         #f59e0b;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--body-bg);
+  color: var(--text);
+  transition: background 0.2s, color 0.2s;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ── Card ──────────────────────────────────────────────────────────── */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+}
+
+/* ── Input / Select ────────────────────────────────────────────────── */
+.field {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+.field:focus { border-color: var(--accent); }
+.field::placeholder { color: var(--text-3); }
+
+/* ── Btn ───────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--text-inv);
+}
+[data-theme="dark"] .btn-primary { color: #0d0f12; }
+.btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn-ghost {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--card-border);
+}
+.btn-ghost:hover { background: var(--hover-bg); }
+.btn-danger { background: #f43f5e; color: #fff; }
+.btn-danger:hover { opacity: 0.88; }
+.btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+
+/* ── Typography helpers ────────────────────────────────────────────── */
+.font-mono { font-family: 'Outfit', 'JetBrains Mono', monospace; }
+.text-lime  { color: var(--lime); }
+.text-up    { color: var(--income); }
+.text-down  { color: var(--expense); }
+.text-muted { color: var(--text-3); }
+.text-sub   { color: var(--text-2); }
+
+/* ── Progress bar ──────────────────────────────────────────────────── */
+.prog-track {
+  height: 7px;
+  background: var(--accent-soft);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.prog-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+}
+.prog-safe   { background: linear-gradient(90deg,#10b981,#34d399); }
+.prog-warn   { background: linear-gradient(90deg,#f59e0b,#fbbf24); }
+.prog-danger { background: linear-gradient(90deg,#f43f5e,#fb7185); }
+
+/* ── Badge ─────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.badge-income  { background: rgba(16,185,129,0.12); color: #10b981; }
+.badge-expense { background: rgba(244,63,94,0.12);  color: #f43f5e; }
+
+/* ── Overlay modal ─────────────────────────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  padding: 16px;
+}
+.modal {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 480px;
+  padding: 28px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.4);
 }
