@@ -1,0 +1,42 @@
+# ── 웹 프레임워크 ──
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+itsdangerous
+werkzeug         # password hashing (generate_password_hash / check_password_hash)
+
+# ── 데이터베이스 ──
+pymysql
+cryptography
+dbutils
+
+# ── AI (Claude) ──
+anthropic
+
+# ── 주식 데이터 ──
+yfinance
+pykrx
+finance-datareader
+fredapi
+
+# ── 데이터 분석 ──
+pandas
+numpy
+pyarrow
+xgboost
+lightgbm
+shap
+optuna
+scikit-learn
+scipy
+matplotlib<=3.9.4
+
+# ── 크롤링 ──
+requests
+beautifulsoup4
+lxml
+
+# ── 기타 ──
+pytz
+apscheduler

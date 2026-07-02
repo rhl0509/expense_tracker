@@ -1,0 +1,70 @@
+# 환경변수 (API 키, DB 비밀번호 등 - 절대 올리면 안 됨!)
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 가상환경
+venv/
+env/
+.venv/
+.venv64/
+
+# Flask
+instance/
+.flask_session/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+backup/db/*.sql
+backup/model/*/
+
+# ML model cache
+XGBoost_v2/data/cache/
+XGBoost_v2/data/ohlcv/
+cache/
+data/ohlcv/
+data/cache/
+
+# ML model artifacts
+*.pkl
+model/*.json
+model/*.pkl
+XGBoost_v2/model/*.json
+XGBoost_v2/model/*.pkl
+catboost_info/
+
+# Logs
+logs/*.log
+
+# Node
+vestmail/node_modules/
+
+# 프론트엔드는 별도 git 저장소(github.com/rhl0509/expense_frontend)
+frontend/
+
+# Python test cache
+.pytest_cache/
+
+# DB dumps / backups (실 데이터·해시 포함 - 절대 올리면 안 됨!)
+_db_backup/
+backup/
+
+# AI assistant config / docs
+.claude/
+.gemini/
+CLAUDE.md
+**/CLAUDE.md
+AGENTS.md
+**/AGENTS.md
