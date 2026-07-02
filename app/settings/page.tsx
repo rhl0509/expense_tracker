@@ -71,6 +71,10 @@ export default function SettingsPage() {
               </span>
               <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--accent)' }}>ON</span>
             </div>
+            <div style={noticeStyle}>
+              ⓘ 저장해두면 매일 한 번 새 명세서를 자동으로 가져옵니다. 지금 바로 가져오려면
+              거래 내역 화면의 ‘카드명세서 가져오기’를 누르세요.
+            </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>다시 설정</button>
               <button className="btn btn-ghost btn-sm" style={{ color: 'var(--expense)' }}
@@ -129,6 +133,10 @@ const labelStyle: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 600, 
 const rowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10,
   border: '1px solid var(--card-border)', background: 'var(--hover-bg)', padding: '8px 12px',
+};
+const noticeStyle: React.CSSProperties = {
+  fontSize: '0.74rem', color: 'var(--text-3)', lineHeight: 1.6, borderRadius: 10,
+  background: 'var(--accent-soft)', padding: '8px 12px',
 };
 
 function Empty({ children }: { children: React.ReactNode }) {
