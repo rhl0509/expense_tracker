@@ -222,6 +222,37 @@ def decode_statement_bytes(raw: bytes) -> str:
     return raw.decode("euc-kr", errors="replace")
 
 
+# Gmail(mx.google.com)이 수신 시 부여한 인증 결과. FROM 헤더는 위조 가능하므로
+# spf/dkim/dmarc pass + 발신 도메인 정합을 요구해, spoof 된 명세서 HTML 이
+# 파서·우리카드 복호화(node+jsdom)에 도달하지 못하게 한다.
+_AUTH_PASS = re.compile(r"\b(?:dkim|spf|dmarc)=pass\b([^;]*)", re.I)
+_AUTH_DOMAIN = re.compile(
+    r"(?:header\.d|header\.i|header\.from|smtp\.mailfrom)\s*=\s*<?([^\s;>]+)", re.I
+)
+
+
+def _registrable(domain: str) -> str:
+    """도메인의 등록가능 도메인(끝 두 레이블)을 반환. 한국 카드사는 모두 .com."""
+    domain = domain.strip().strip(".").lower()
+    if "@" in domain:
+        domain = domain.rsplit("@", 1)[-1]
+    labels = domain.split(".")
+    return ".".join(labels[-2:]) if len(labels) >= 2 else domain
+
+
+def _sender_authenticated(msg, sender: str) -> bool:
+    """Gmail 이 부여한 Authentication-Results 로 발신 도메인이 인증됐는지 확인."""
+    want = _registrable(sender)
+    for header in msg.get_all("Authentication-Results") or []:
+        if not header.strip().lower().startswith("mx.google.com"):
+            continue  # 위조 가능한 상류 헤더는 무시(Gmail 자체 결과만 신뢰)
+        for m in _AUTH_PASS.finditer(header):
+            dm = _AUTH_DOMAIN.search(m.group(1))
+            if dm and _registrable(dm.group(1)) == want:
+                return True
+    return False
+
+
 def _decode_filename(name: str) -> str:
     """RFC2047 인코딩된 첨부 파일명을 디코드(KB 등은 EUC-KR B-인코딩됨)."""
     from email.header import decode_header
@@ -278,6 +309,8 @@ def _fetch_source(imap, since, sender, fn_hint, parser, payment_method,
         if typ != "OK" or not msg_data or not msg_data[0]:
             continue
         msg = email.message_from_bytes(msg_data[0][1])
+        if not _sender_authenticated(msg, sender):
+            continue  # 발신 도메인 미인증(위조 가능) → 명세서로 취급하지 않음
         for part in msg.walk():
             filename = _decode_filename(part.get_filename() or "").lower()
             if not filename.endswith(".html") or fn_hint not in filename:

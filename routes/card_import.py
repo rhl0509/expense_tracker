@@ -16,11 +16,14 @@ transactions 에 삽입한다. 우리카드는 VestMail 암호화라 저장된 �
 그룹별로 명세서 건수에서 기존 DB 건수를 뺀 만큼만 삽입한다.
 """
 import base64
-import hashlib
 import logging
-from collections import Counter
+import time
+from collections import Counter, defaultdict
+from threading import Lock
 
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 
@@ -34,12 +37,39 @@ logger = logging.getLogger(__name__)
 
 _FALLBACK_CATEGORY = "기타"
 
+# ── 수집 rate limit·삽입 상한 (유저별 슬라이딩 윈도우, 프로세스 로컬) ──
+# IMAP 수집은 무겁고 외부 계정에 로그인 시도하므로 남용을 막는다.
+_IMPORT_RATE_LIMIT = 5      # 윈도우당 최대 수집 횟수
+_IMPORT_RATE_WINDOW = 300   # 초
+_MAX_IMPORT_INSERT = 500    # 1회 수집당 삽입 상한
+_import_hits = defaultdict(list)
+_import_lock = Lock()
 
-# ── 자격증명 암호화(Fernet 키는 SECRET_KEY 에서 파생) ──────────────────
-# SECRET_KEY 를 교체하면 기존 암호문은 복호화 불가 → 사용자가 재입력해야 한다.
+
+def _import_rate_limited(user_no) -> bool:
+    now = time.time()
+    with _import_lock:
+        hits = _import_hits[user_no]
+        cutoff = now - _IMPORT_RATE_WINDOW
+        hits[:] = [t for t in hits if t > cutoff]
+        if len(hits) >= _IMPORT_RATE_LIMIT:
+            return True
+        hits.append(now)
+        return False
+
+
+# ── 자격증명 암호화 ────────────────────────────────────────────────────
+# 세션 서명 키(SECRET_KEY 직접 사용)와 분리하기 위해 HKDF 로 도메인 분리된
+# 별도 키를 파생한다. SECRET_KEY 를 교체하면 기존 암호문은 복호화 불가 →
+# 사용자가 재입력해야 한다.
 def _fernet() -> Fernet:
-    key = base64.urlsafe_b64encode(hashlib.sha256(Config.SECRET_KEY.encode("utf-8")).digest())
-    return Fernet(key)
+    raw = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"expense_tracker/card-credentials",
+        info=b"member_email_credentials fernet key v1",
+    ).derive(Config.SECRET_KEY.encode("utf-8"))
+    return Fernet(base64.urlsafe_b64encode(raw))
 
 
 def _encrypt(plain: str) -> bytes:
@@ -145,6 +175,11 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
     user_no = get_user_no(request)
     days = max(1, min(days, 90))
 
+    if _import_rate_limited(user_no):
+        return JSONResponse(
+            {"error": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429,
+        )
+
     cred = _load_credentials(user_no)
     if not cred:
         return JSONResponse(
@@ -186,6 +221,8 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
             fallback_id = name_to_id.get(_FALLBACK_CATEGORY)
 
             for key, want_cnt in wanted.items():
+                if inserted >= _MAX_IMPORT_INSERT:
+                    break
                 date_val, merchant, amount, payment_method = key
                 cursor.execute(
                     """SELECT COUNT(*) AS c FROM transactions
@@ -202,6 +239,8 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
                 relation = f"/{r['relation']}" if r["relation"] else ""
                 memo = f"{r['card']}{relation} · {payment_method} 명세서 자동수집"
                 for _ in range(to_insert):
+                    if inserted >= _MAX_IMPORT_INSERT:
+                        break
                     cursor.execute(
                         """INSERT INTO transactions
                            (account_book_id, category_id, member_id, type, amount,
