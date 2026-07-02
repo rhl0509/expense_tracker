@@ -1,17 +1,75 @@
 import json
 import logging
+import time
+from collections import defaultdict
+from threading import Lock
+
 import anthropic
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from config import Config
 from database.db_connection import get_db_connection
-from routes.utils import get_account_book_id, api_require_login
+from routes.utils import get_account_book_id, get_user_no, api_require_login
 from datetime import datetime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+
+# ── AI 호출 rate limit (유저별 슬라이딩 윈도우, 프로세스 로컬) ──
+_RATE_LIMIT = 20      # 윈도우당 최대 요청 수
+_RATE_WINDOW = 60     # 초
+_rate_hits = defaultdict(list)
+_rate_lock = Lock()
+
+
+def _rate_limited(user_no) -> bool:
+    """user_no 기준으로 최근 _RATE_WINDOW초 동안의 요청이 한도를 넘으면 True."""
+    now = time.time()
+    with _rate_lock:
+        hits = _rate_hits[user_no]
+        cutoff = now - _RATE_WINDOW
+        hits[:] = [t for t in hits if t > cutoff]
+        if len(hits) >= _RATE_LIMIT:
+            return True
+        hits.append(now)
+        return False
+
+
+# ── 채팅 메시지 검증 (클라이언트가 보낸 배열을 그대로 신뢰하지 않는다) ──
+_MAX_CHAT_MESSAGES = 40     # 대화 턴 상한
+_MAX_MESSAGE_CHARS = 8000   # 메시지 1건 길이 상한
+_MAX_TOTAL_CHARS = 24000    # 전체 길이 상한
+
+
+def _sanitize_chat_messages(raw):
+    """role/content만 남긴 안전한 messages 리스트를 반환. 문제가 있으면 (None, 에러문자열)."""
+    if not isinstance(raw, list) or not raw:
+        return None, "messages가 없습니다."
+    if len(raw) > _MAX_CHAT_MESSAGES:
+        return None, "대화가 너무 깁니다. 새로 시작해 주세요."
+    cleaned = []
+    total = 0
+    for m in raw:
+        if not isinstance(m, dict):
+            return None, "메시지 형식이 올바르지 않습니다."
+        role = m.get("role")
+        content = m.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str):
+            return None, "메시지 형식이 올바르지 않습니다."
+        content = content.strip()
+        if not content:
+            continue
+        if len(content) > _MAX_MESSAGE_CHARS:
+            return None, "메시지가 너무 깁니다."
+        total += len(content)
+        if total > _MAX_TOTAL_CHARS:
+            return None, "대화 내용이 너무 깁니다."
+        cleaned.append({"role": role, "content": content})
+    if not cleaned or cleaned[-1]["role"] != "user":
+        return None, "메시지 형식이 올바르지 않습니다."
+    return cleaned, None
 
 SYSTEM_PROMPT = """당신은 가계부 분석 전문 AI 어시스턴트입니다.
 사용자의 수입/지출 데이터를 분석하고 유용한 재무 인사이트를 제공합니다.
@@ -133,10 +191,14 @@ def _execute_tool(tool_name, tool_input, account_book_id):
 
 @router.post('/ai/analyze')
 async def analyze(request: Request, _=Depends(api_require_login)):
+    if _rate_limited(get_user_no(request)):
+        return JSONResponse({"error": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429)
     data   = await request.json()
-    prompt = data.get('prompt', '')
+    prompt = (data.get('prompt') or '').strip()
     if not prompt:
         return JSONResponse({"error": "prompt가 없습니다."}, status_code=400)
+    if len(prompt) > _MAX_MESSAGE_CHARS:
+        return JSONResponse({"error": "요청이 너무 깁니다."}, status_code=400)
 
     def generate():
         try:
@@ -157,10 +219,12 @@ async def analyze(request: Request, _=Depends(api_require_login)):
 
 @router.post('/ai/chat')
 async def chat(request: Request, _=Depends(api_require_login)):
-    data     = await request.json()
-    messages = data.get('messages', [])
-    if not messages:
-        return JSONResponse({"error": "messages가 없습니다."}, status_code=400)
+    if _rate_limited(get_user_no(request)):
+        return JSONResponse({"error": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429)
+    data = await request.json()
+    messages, err = _sanitize_chat_messages(data.get('messages'))
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
 
     def generate():
         try:
@@ -181,10 +245,14 @@ async def chat(request: Request, _=Depends(api_require_login)):
 
 @router.post('/ai/agent')
 async def agent(request: Request, _=Depends(api_require_login)):
+    if _rate_limited(get_user_no(request)):
+        return JSONResponse({"error": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429)
     data         = await request.json()
-    user_message = data.get('message', '')
+    user_message = (data.get('message') or '').strip()
     if not user_message:
         return JSONResponse({"error": "message가 없습니다."}, status_code=400)
+    if len(user_message) > _MAX_MESSAGE_CHARS:
+        return JSONResponse({"error": "요청이 너무 깁니다."}, status_code=400)
 
     account_book_id = get_account_book_id(request)
     now = datetime.now()

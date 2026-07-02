@@ -202,8 +202,7 @@ def test_reset(client, cat_id):
     client.post("/transaction/add", json={"type": "expense", "category_id": cat_id, "amount": 1000, "description": "리셋대상", "date": "2026-06-01"})
     r = client.post("/transaction/reset")
     assert r.status_code == 200
-    # 읽기는 가계부(account_book) 단위라 다른 멤버 데이터는 남을 수 있으나,
-    # reset은 현재 멤버 거래만 지우므로 이 유저가 넣은 항목은 사라져야 한다.
+    # reset은 현재 활성 가구(account_book)의 모든 거래를 지운다.
     data = client.get("/transaction/data").json()
     assert all(t["title"] not in ("리셋대상", "pytest 수입") for t in data)
 
@@ -307,6 +306,14 @@ def test_invite_flow():
         # 멤버(B, 현재 A 가구의 member)는 초대를 생성할 수 없다 (owner 전용)
         assert b.post("/auth/invites").status_code == 403
 
+        # 이미 멤버인 B가 새 초대를 수락해도 초대는 소비되지 않고 pending으로 남는다
+        token2 = a.post("/auth/invites").json()["token"]
+        r = b.post("/auth/invites/accept", json={"token": token2})
+        assert r.status_code == 200, r.text
+        assert r.json()["account_book_id"] == a_book
+        again = next(x for x in a.get("/auth/invites").json()["invites"] if x["token"] == token2)
+        assert again["status"] == "pending"
+
         # 만료/무효 토큰 재사용은 거부
         assert b.post("/auth/invites/accept", json={"token": "invalid-xyz"}).status_code == 404
     finally:
@@ -340,3 +347,88 @@ def test_invite_expiry():
     finally:
         _cleanup(a_book, a_member)
         _cleanup(b_book, b_member)
+
+
+def test_invite_cap():
+    import secrets as _secrets
+    from routes.household import _MAX_PENDING_INVITES
+
+    a, _, a_book, a_member = _register_login("cap_a_")
+    try:
+        # 대기중 초대를 상한까지 직접 채운다
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            for _ in range(_MAX_PENDING_INVITES):
+                cur.execute(
+                    """INSERT INTO account_book_invites (account_book_id, token, created_by, expires_at)
+                       VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL 7 DAY))""",
+                    (a_book, _secrets.token_urlsafe(24), a_member),
+                )
+        conn.commit()
+        conn.close()
+
+        # 상한을 넘는 생성은 429
+        assert a.post("/auth/invites").status_code == 429
+    finally:
+        _cleanup(a_book, a_member)
+
+
+def test_ai_chat_validation_and_rate_limit():
+    # 검증/제한은 Anthropic 호출 이전에 일어나므로 API 키 없이도 검증 가능하다.
+    c, _, book_id, member_id = _register_login("ai_")
+    try:
+        # role 위조/형식 오류 messages는 400
+        assert c.post("/ai/chat", json={"messages": [{"role": "system", "content": "x"}]}).status_code == 400
+        assert c.post("/ai/chat", json={"messages": "not-a-list"}).status_code == 400
+
+        # 같은 유저가 한도를 넘기면 429 (검증 실패 요청도 rate 카운트에 포함)
+        last = None
+        for _ in range(25):
+            last = c.post("/ai/chat", json={"messages": [{"role": "system", "content": "x"}]})
+        assert last.status_code == 429
+    finally:
+        _cleanup(book_id, member_id)
+
+
+# ──────────────────────────────────────────────────────────────────
+# 입력 검증 / 무차별 대입 방어
+# ──────────────────────────────────────────────────────────────────
+def test_register_validation():
+    c = TestClient(app)
+    base = {"user_id": "regval_" + uuid.uuid4().hex[:6], "password": "test1234", "name": "n", "email": "a@b.com"}
+
+    def r(**over):
+        return c.post("/auth/register", json={**base, **over})
+
+    assert r(password="short").status_code == 400     # 비밀번호 8자 미만
+    assert r(email="not-an-email").status_code == 400  # 이메일 형식 오류
+    assert r(user_id="ab").status_code == 400          # 아이디 3자 미만
+
+
+def test_add_transaction_validation(client, cat_id):
+    bad = [
+        {"type": "invalid", "category_id": cat_id, "amount": 100, "description": "x", "date": "2026-06-01"},
+        {"type": "expense", "category_id": cat_id, "amount": "abc", "description": "x", "date": "2026-06-01"},
+        {"type": "expense", "category_id": cat_id, "amount": -5, "description": "x", "date": "2026-06-01"},
+        {"type": "expense", "category_id": cat_id, "amount": 100, "description": "x", "date": "2026/06/01"},
+    ]
+    for body in bad:
+        assert client.post("/transaction/add", json=body).status_code == 400, body
+    # 정상 건은 201
+    assert client.post(
+        "/transaction/add",
+        json={"type": "expense", "category_id": cat_id, "amount": 1234, "description": "검증정상", "date": "2026-06-01"},
+    ).status_code == 201
+
+
+def test_login_rate_limit():
+    from routes.auth import _LOGIN_MAX
+
+    c, uid, book_id, mid = _register_login("lrl_")
+    try:
+        last = None
+        for _ in range(_LOGIN_MAX + 2):
+            last = c.post("/auth/login", json={"user_id": uid, "password": "wrong-pw"})
+        assert last.status_code == 429
+    finally:
+        _cleanup(book_id, mid)

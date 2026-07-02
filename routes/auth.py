@@ -1,4 +1,8 @@
 import logging
+import re
+import time
+from collections import defaultdict
+from threading import Lock
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -8,6 +12,33 @@ from routes.utils import get_default_book_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+# ── 로그인 무차별 대입 방어 (아이디별 실패 횟수, 프로세스 로컬) ──
+# 프론트 프록시 뒤라 클라이언트 IP를 신뢰하기 어려워 대상 계정(user_id) 기준으로 제한한다.
+_LOGIN_MAX = 10       # 윈도우당 최대 실패 횟수
+_LOGIN_WINDOW = 300   # 초 (5분)
+_login_fails = defaultdict(list)
+_login_lock = Lock()
+
+
+def _login_blocked(key) -> bool:
+    now = time.time()
+    with _login_lock:
+        hits = _login_fails[key]
+        hits[:] = [t for t in hits if t > now - _LOGIN_WINDOW]
+        return len(hits) >= _LOGIN_MAX
+
+
+def _login_record_failure(key):
+    with _login_lock:
+        _login_fails[key].append(time.time())
+
+
+def _login_reset(key):
+    with _login_lock:
+        _login_fails.pop(key, None)
 
 
 # 신규 가구에 시딩할 기본 카테고리 (name, type, sort_order).
@@ -46,13 +77,21 @@ def _create_book_for_member(cursor, member_id, member_name):
 @router.post('/register')
 async def register(request: Request):
     data = await request.json()
-    user_id  = data.get('user_id')
-    password = data.get('password')
-    name     = data.get('name')
-    email    = data.get('email')
+    user_id  = (data.get('user_id') or '').strip()
+    password = data.get('password') or ''
+    name     = (data.get('name') or '').strip()
+    email    = (data.get('email') or '').strip()
 
     if not all([user_id, password, name, email]):
         return JSONResponse({"error": "모든 필드를 입력해주세요."}, status_code=400)
+    if not (3 <= len(user_id) <= 50):
+        return JSONResponse({"error": "아이디는 3~50자여야 합니다."}, status_code=400)
+    if not (8 <= len(password) <= 128):
+        return JSONResponse({"error": "비밀번호는 8자 이상이어야 합니다."}, status_code=400)
+    if len(name) > 50:
+        return JSONResponse({"error": "이름이 너무 깁니다."}, status_code=400)
+    if len(email) > 255 or not _EMAIL_RE.match(email):
+        return JSONResponse({"error": "이메일 형식이 올바르지 않습니다."}, status_code=400)
 
     hashed_password = generate_password_hash(password)
     conn = get_db_connection()
@@ -86,6 +125,11 @@ async def login(request: Request):
     user_id  = data.get('user_id')
     password = data.get('password')
 
+    if user_id and _login_blocked(user_id):
+        return JSONResponse(
+            {"error": "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429
+        )
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -95,6 +139,7 @@ async def login(request: Request):
             )
             user = cursor.fetchone()
             if user and check_password_hash(user['password_hash'], password):
+                _login_reset(user_id)
                 book_id = get_default_book_id(cursor, user['id'])
                 if book_id is None:
                     # 레거시 유저(장부 없음): 자동 생성
@@ -106,6 +151,7 @@ async def login(request: Request):
                 request.session['account_book_id'] = book_id
                 return JSONResponse({"message": "로그인 성공"}, status_code=200)
             else:
+                _login_record_failure(user_id)
                 return JSONResponse({"error": "아이디 또는 비밀번호가 틀립니다."}, status_code=401)
     except Exception as e:
         logger.exception("로그인 실패")

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse, Response
 from database.db_connection import get_db_connection
 from datetime import datetime, date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from io import StringIO
 from routes.utils import get_user_no, get_account_book_id, api_require_login
 
@@ -53,12 +53,28 @@ async def add_transaction(request: Request, _=Depends(api_require_login)):
     data = await request.json()
     type_val       = data.get('type')
     category_id    = data.get('category_id')
-    amount         = data.get('amount')
-    title          = data.get('description')
-    memo           = data.get('memo', '')
+    title          = (data.get('description') or '').strip()
+    memo           = data.get('memo') or ''
     payment_method = data.get('payment_method', '현금')
     user_tag       = data.get('user', '공용')
     date_val       = data.get('date') or datetime.now().strftime('%Y-%m-%d')
+
+    if type_val not in ('income', 'expense'):
+        return JSONResponse({"error": "type은 income 또는 expense여야 합니다."}, status_code=400)
+    if len(title) > 200:
+        return JSONResponse({"error": "내용이 너무 깁니다."}, status_code=400)
+    if len(memo) > 500:
+        return JSONResponse({"error": "메모가 너무 깁니다."}, status_code=400)
+    try:
+        amount = Decimal(str(data.get('amount')))
+    except (InvalidOperation, TypeError, ValueError):
+        return JSONResponse({"error": "금액이 올바르지 않습니다."}, status_code=400)
+    if not (0 < amount < Decimal('1000000000000')):
+        return JSONResponse({"error": "금액이 올바르지 않습니다."}, status_code=400)
+    try:
+        datetime.strptime(date_val, '%Y-%m-%d')
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "날짜 형식이 올바르지 않습니다."}, status_code=400)
 
     account_book_id = get_account_book_id(request)
     conn = get_db_connection()
@@ -526,11 +542,11 @@ async def get_yearly_summary(request: Request, _=Depends(api_require_login)):
 
 @router.post('/reset')
 async def reset_data(request: Request, _=Depends(api_require_login)):
-    user_no = get_user_no(request)
+    account_book_id = get_account_book_id(request)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM transactions WHERE member_id = %s", (user_no,))
+            cursor.execute("DELETE FROM transactions WHERE account_book_id = %s", (account_book_id,))
         conn.commit()
         return {"message": "reset", "deleted": cursor.rowcount}
     finally:

@@ -28,6 +28,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _INVITE_TTL_DAYS = 7
+_MAX_PENDING_INVITES = 20
 
 
 @router.get("/books")
@@ -65,6 +66,9 @@ async def switch_book(request: Request, _=Depends(api_require_login)):
                 return JSONResponse({"error": "해당 가구의 멤버가 아닙니다."}, status_code=403)
         request.session["account_book_id"] = target
         return {"message": "가구를 전환했습니다.", "account_book_id": target}
+    except Exception:
+        logger.exception("가구 전환 실패")
+        return JSONResponse({"error": "서버 내부 오류가 발생했습니다."}, status_code=500)
     finally:
         conn.close()
 
@@ -130,6 +134,17 @@ async def create_invite(request: Request, _=Depends(api_require_login)):
             if not is_book_owner(cursor, book_id, member_id):
                 return JSONResponse({"error": "가구장만 초대를 생성할 수 있습니다."}, status_code=403)
             cursor.execute(
+                """SELECT COUNT(*) AS cnt FROM account_book_invites
+                   WHERE account_book_id = %s AND status = 'pending'
+                     AND (expires_at IS NULL OR expires_at >= NOW())""",
+                (book_id,),
+            )
+            if cursor.fetchone()["cnt"] >= _MAX_PENDING_INVITES:
+                return JSONResponse(
+                    {"error": "대기중인 초대가 너무 많습니다. 기존 초대를 정리한 뒤 다시 시도해 주세요."},
+                    status_code=429,
+                )
+            cursor.execute(
                 """INSERT INTO account_book_invites
                    (account_book_id, token, created_by, expires_at)
                    VALUES (%s, %s, %s, %s)""",
@@ -157,16 +172,12 @@ async def list_invites(request: Request, _=Depends(api_require_login)):
         with conn.cursor() as cursor:
             if not is_book_member(cursor, book_id, member_id):
                 return JSONResponse({"error": "해당 가구의 멤버가 아닙니다."}, status_code=403)
-            # 조회 시점에 기한이 지난 pending 초대를 expired로 정리해 상태를 항상 정확히 유지한다.
+            # 기한이 지난 pending 초대는 조회 시점에 expired로 표시한다(GET은 쓰기하지 않음).
             cursor.execute(
-                """UPDATE account_book_invites SET status = 'expired'
-                   WHERE account_book_id = %s AND status = 'pending'
-                     AND expires_at IS NOT NULL AND expires_at < NOW()""",
-                (book_id,),
-            )
-            conn.commit()
-            cursor.execute(
-                """SELECT i.id, i.token, i.status, i.expires_at, i.created_at,
+                """SELECT i.id, i.token,
+                          CASE WHEN i.status = 'pending' AND i.expires_at IS NOT NULL AND i.expires_at < NOW()
+                               THEN 'expired' ELSE i.status END AS status,
+                          i.expires_at, i.created_at,
                           acc.name AS accepted_by_name
                    FROM account_book_invites i
                    LEFT JOIN members acc ON acc.id = i.accepted_by
@@ -190,14 +201,15 @@ async def accept_invite(request: Request, _=Depends(api_require_login)):
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, account_book_id, status, expires_at FROM account_book_invites WHERE token = %s",
+                """SELECT id, account_book_id, status,
+                          (expires_at IS NOT NULL AND expires_at < NOW()) AS is_expired
+                   FROM account_book_invites WHERE token = %s""",
                 (token,),
             )
             inv = cursor.fetchone()
             if not inv:
                 return JSONResponse({"error": "유효하지 않은 초대입니다."}, status_code=404)
-            expired = inv["status"] == "expired" or (inv["expires_at"] and inv["expires_at"] < datetime.now())
-            if expired and inv["status"] in ("pending", "expired"):
+            if inv["status"] == "expired" or inv["is_expired"]:
                 if inv["status"] == "pending":
                     cursor.execute("UPDATE account_book_invites SET status = 'expired' WHERE id = %s", (inv["id"],))
                     conn.commit()
@@ -205,6 +217,10 @@ async def accept_invite(request: Request, _=Depends(api_require_login)):
             if inv["status"] != "pending":
                 return JSONResponse({"error": "유효하지 않은 초대입니다."}, status_code=404)
             book_id = inv["account_book_id"]
+            # 이미 멤버라면 초대를 소비하지 않고(다른 사람이 쓸 수 있게) 세션만 해당 가구로 맞춘다.
+            if is_book_member(cursor, book_id, member_id):
+                request.session["account_book_id"] = book_id
+                return {"message": "이미 이 가구의 멤버입니다.", "account_book_id": book_id}
             cursor.execute(
                 "INSERT IGNORE INTO account_book_members (account_book_id, member_id, role) VALUES (%s, %s, 'member')",
                 (book_id, member_id),
