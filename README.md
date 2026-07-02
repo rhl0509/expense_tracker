@@ -42,7 +42,6 @@ routes/
   auth.py         /auth/register /login /logout /me
   household.py    /auth/books* /auth/invites* (가구 멤버십·초대)
   transaction.py  /transaction/* (거래·카테고리·정기결제·설정·CSV)
-  card_import.py  /transaction/import/card (카드 명세서 파싱)
   expense_ai.py   /ai/analyze /ai/chat /ai/agent (Claude 스트리밍)
   health.py       /health
 migrations/       스키마 마이그레이션(SQL)

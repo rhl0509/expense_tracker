@@ -41,10 +41,3 @@ class Config:
     ]
 
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
-
-    # 카드명세서 자동수집용 Gmail IMAP (앱 비밀번호)
-    GMAIL_IMAP_USER     = os.getenv('GMAIL_IMAP_USER')
-    GMAIL_IMAP_PASSWORD = os.getenv('GMAIL_IMAP_PASSWORD')
-
-    # 우리카드 VestMail 보안메일 복호화용 생년월일 6자리(없으면 우리카드는 건너뜀)
-    WOORI_BIRTH = os.getenv('WOORI_BIRTH')
