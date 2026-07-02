@@ -1,5 +1,13 @@
 # 가계부 Pro — 프론트엔드 (expense_frontend)
 
+![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![React Query](https://img.shields.io/badge/React%20Query-FF4154?logo=reactquery&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?logo=tailwindcss&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-5A0FC8?logo=pwa&logoColor=white)
+![Household Budget](https://img.shields.io/badge/Household%20Budget-2E7D32)
+
 개인 지출/수입을 기록·분석하고 예산·구독·AI 조언까지 제공하는 **가계부 웹앱의 프론트엔드**입니다.
 Next.js(App Router) 기반이며, 백엔드(FastAPI)와 연동해 동작합니다.
 
