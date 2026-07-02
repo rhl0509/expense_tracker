@@ -1,5 +1,12 @@
 # 가계부 Pro — 백엔드 (FastAPI)
 
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white)
+![REST API](https://img.shields.io/badge/REST%20API-6BA539?logo=openapiinitiative&logoColor=white)
+![Multi--tenancy](https://img.shields.io/badge/Multi--tenancy-8E44AD)
+![Household Budget](https://img.shields.io/badge/Household%20Budget-2E7D32)
+
 가계부(개인·가구 공유) 앱의 백엔드. **순수 JSON API**만 제공하며, 화면은
 별도 저장소의 Next.js SPA([expense_frontend](https://github.com/rhl0509/expense_frontend))가
 담당한다. 페이지 렌더링(Jinja2)은 없다.
