@@ -25,6 +25,9 @@ Thumbs.db
 # Logs
 logs/*.log
 
+# Node (우리카드 VestMail 복호화용 vestmail/ 의존성)
+vestmail/node_modules/
+
 # 프론트엔드는 별도 git 저장소(github.com/rhl0509/expense_frontend)
 frontend/
 

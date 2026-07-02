@@ -432,3 +432,37 @@ def test_login_rate_limit():
         assert last.status_code == 429
     finally:
         _cleanup(book_id, mid)
+
+
+def test_card_credentials_crud():
+    c, uid, book_id, mid = _register_login("card_")
+    try:
+        assert c.get("/transaction/card-credentials").json()["configured"] is False
+        # 잘못된 값은 거부
+        assert c.post("/transaction/card-credentials",
+                      json={"imap_user": "me@gmail.com", "imap_password": "short"}).status_code == 400
+        assert c.post("/transaction/card-credentials",
+                      json={"imap_user": "not-an-email", "imap_password": "abcd efgh ijkl mnop"}).status_code == 400
+        assert c.post("/transaction/card-credentials",
+                      json={"imap_user": "me@gmail.com", "imap_password": "abcd efgh ijkl mnop",
+                            "woori_birth": "12"}).status_code == 400
+        # 정상 저장
+        assert c.post("/transaction/card-credentials",
+                      json={"imap_user": "me@gmail.com", "imap_password": "abcd efgh ijkl mnop",
+                            "woori_birth": "900101"}).status_code == 200
+        st = c.get("/transaction/card-credentials").json()
+        assert st["configured"] is True and st["has_woori"] is True
+        assert "gmail.com" in st["imap_user_masked"] and st["imap_user_masked"] != "me@gmail.com"
+        # 비밀번호는 암호문으로 저장(평문 미포함)
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT imap_password_enc FROM member_email_credentials WHERE member_id = %s", (mid,))
+            enc = bytes(cur.fetchone()["imap_password_enc"])
+        conn.close()
+        assert b"abcdefghijklmnop" not in enc
+        # 미설정 사용자로 임포트하면 400
+        assert c.delete("/transaction/card-credentials").status_code == 200
+        assert c.get("/transaction/card-credentials").json()["configured"] is False
+        assert c.post("/transaction/import/card").status_code == 400
+    finally:
+        _cleanup(book_id, mid)

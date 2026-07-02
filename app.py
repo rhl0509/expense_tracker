@@ -21,6 +21,7 @@ from routes.utils import LoginRequired, ApiLoginRequired, BookAccessDenied
 from routes.auth import router as auth_router
 from routes.household import router as household_router
 from routes.transaction import router as transaction_router
+from routes.card_import import router as card_import_router
 from routes.expense_ai import router as ai_router
 from routes.health import router as health_router
 
@@ -66,6 +67,7 @@ async def _book_access_denied_handler(request: Request, exc: BookAccessDenied):
 app.include_router(auth_router, prefix="/auth")
 app.include_router(household_router, prefix="/auth")
 app.include_router(transaction_router, prefix="/transaction")
+app.include_router(card_import_router, prefix="/transaction")
 app.include_router(ai_router)
 app.include_router(health_router)
 
