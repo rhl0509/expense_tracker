@@ -37,7 +37,7 @@ app = FastAPI(title="가계부 API", lifespan=lifespan)
 # 프론트(Next.js)는 dev 시 localhost:3000, rewrites 프록시 시 동일 출처.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=Config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

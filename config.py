@@ -33,6 +33,13 @@ class Config:
     # HTTPS 배포 시 세션 쿠키에 Secure 플래그를 붙인다(HTTP 로컬/Tailscale 접속은 false 유지).
     SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', False)
 
+    # CORS 허용 오리진(쉼표 구분). 미설정 시 로컬 개발용 기본값.
+    CORS_ORIGINS = [
+        o.strip()
+        for o in os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
+        if o.strip()
+    ]
+
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 
     # 카드명세서 자동수집용 Gmail IMAP (앱 비밀번호)
