@@ -28,7 +28,10 @@ from routes.health import router as health_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 시작/종료 훅 (현재는 비어 있음)
+    # 카드 명세서 자동 수집 스케줄러(데몬 스레드) 기동.
+    if Config.CARD_IMPORT_SCHEDULER:
+        from routes.card_import import start_scheduler
+        start_scheduler()
     yield
 
 

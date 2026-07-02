@@ -19,7 +19,7 @@ import base64
 import logging
 import time
 from collections import Counter, defaultdict
-from threading import Lock
+from threading import Event, Lock, Thread
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
@@ -29,7 +29,9 @@ from fastapi.responses import JSONResponse
 
 from config import Config
 from database.db_connection import get_db_connection
-from routes.utils import get_user_no, get_account_book_id, api_require_login
+from routes.utils import (
+    get_user_no, get_account_book_id, get_default_book_id, api_require_login,
+)
 from card_statement import fetch_all_statements, categorize_merchant
 
 router = APIRouter()
@@ -203,7 +205,26 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
         return JSONResponse({"error": "메일 수집에 실패했습니다. 앱 비밀번호를 확인하세요."}, status_code=502)
 
     account_book_id = get_account_book_id(request)
-    # (날짜, 가맹점, 금액, 결제수단) 그룹별 명세서 건수
+    try:
+        inserted = _insert_rows(user_no, account_book_id, rows)
+    except Exception:
+        logger.exception("카드 명세서 저장 실패")
+        return JSONResponse({"error": "서버 내부 오류가 발생했습니다."}, status_code=500)
+
+    return JSONResponse({
+        "parsed": len(rows),
+        "inserted": inserted,
+        "skipped": len(rows) - inserted,
+    }, status_code=200)
+
+
+# ── 삽입 코어 (HTTP 핸들러·스케줄러 공용) ─────────────────────────────
+def _insert_rows(user_no, account_book_id, rows) -> int:
+    """파싱된 명세서 rows 를 (날짜·가맹점·금액·결제수단) 그룹 중복 제거 후 삽입.
+
+    각 그룹은 명세서 건수에서 기존 DB 건수를 뺀 만큼만 넣는다. 반환: 삽입 건수.
+    실패 시 롤백 후 예외를 그대로 올린다(호출측이 로깅·응답 처리).
+    """
     wanted = Counter(
         (r["date"], r["merchant"], r["amount"], r["payment_method"]) for r in rows
     )
@@ -253,13 +274,78 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
         conn.commit()
     except Exception:
         conn.rollback()
-        logger.exception("카드 명세서 저장 실패")
-        return JSONResponse({"error": "서버 내부 오류가 발생했습니다."}, status_code=500)
+        raise
+    finally:
+        conn.close()
+    return inserted
+
+
+# ── 자동 수집 스케줄러 (하루 1회, 자격증명 보유 멤버 전원) ─────────────
+# 이메일 명세서는 카드사가 월 1회만 보내므로 실시간이 아니라 일 1회 폴링으로
+# 충분하다. 최근 _SCHED_DAYS 일치를 매번 재수집하되 그룹별 중복 제거로 idempotent.
+_SCHED_INTERVAL = 24 * 3600
+_SCHED_DAYS = 40
+_scheduler_stop = Event()
+
+
+def _all_credentialed_members():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT member_id, imap_user, imap_password_enc, woori_birth_enc
+                   FROM member_email_credentials"""
+            )
+            return cursor.fetchall()
     finally:
         conn.close()
 
-    return JSONResponse({
-        "parsed": len(rows),
-        "inserted": inserted,
-        "skipped": len(rows) - inserted,
-    }, status_code=200)
+
+def _member_default_book(member_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            return get_default_book_id(cursor, member_id)
+    finally:
+        conn.close()
+
+
+def _import_all_members(days: int = _SCHED_DAYS):
+    """자격증명을 저장한 모든 멤버의 명세서를 각자 대표 장부로 수집·삽입한다."""
+    for member in _all_credentialed_members():
+        user_no = member["member_id"]
+        try:
+            imap_password = _decrypt(member["imap_password_enc"])
+            if imap_password is None:
+                logger.warning("스케줄 수집 건너뜀: member %s 복호화 실패", user_no)
+                continue
+            book_id = _member_default_book(user_no)
+            if book_id is None:
+                continue
+            woori_birth = _decrypt(member["woori_birth_enc"]) if member["woori_birth_enc"] else None
+            rows = fetch_all_statements(
+                member["imap_user"], imap_password, days=days, woori_birth=woori_birth,
+            )
+            inserted = _insert_rows(user_no, book_id, rows)
+            if inserted:
+                logger.info("스케줄 수집: member %s +%d건", user_no, inserted)
+        except Exception:
+            logger.exception("스케줄 수집 실패: member %s", user_no)
+
+
+def _scheduler_loop():
+    # 기동 직후 즉시 돌지 않고 한 주기 뒤부터 실행(기동 폭주·테스트 영향 방지).
+    while not _scheduler_stop.wait(_SCHED_INTERVAL):
+        try:
+            _import_all_members()
+        except Exception:
+            logger.exception("카드 명세서 스케줄러 주기 실행 실패")
+
+
+def start_scheduler() -> Thread:
+    """백그라운드 데몬 스레드로 자동 수집 스케줄러를 시작한다."""
+    _scheduler_stop.clear()
+    thread = Thread(target=_scheduler_loop, name="card-import-scheduler", daemon=True)
+    thread.start()
+    logger.info("카드 명세서 자동 수집 스케줄러 시작 (주기 %d초)", _SCHED_INTERVAL)
+    return thread

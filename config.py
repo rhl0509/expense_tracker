@@ -41,3 +41,6 @@ class Config:
     ]
 
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+
+    # 카드 명세서 자동 수집 스케줄러(하루 1회 폴링) 사용 여부.
+    CARD_IMPORT_SCHEDULER = _env_bool('CARD_IMPORT_SCHEDULER', True)
