@@ -24,6 +24,7 @@ const NAV_ANALYSIS: NavItem[] = [
   { href: '/budget',        icon: '◎',  label: '예산' },
   { href: '/categories',    icon: '◫',  label: '카테고리' },
   { href: '/household',     icon: '⌂',  label: '가구 관리' },
+  { href: '/settings',      icon: '⚙',  label: '내 정보' },
   { href: '/ai-advisor',    icon: '✦',  label: 'AI 어드바이저' },
 ];
 const BOTTOM_TABS: NavItem[] = [
@@ -38,7 +39,7 @@ const TITLES: Record<string, string> = {
   '/record': '기록하기', '/dashboard': '대시보드', '/transactions': '거래 내역',
   '/search': '검색', '/subscriptions': '정기결제', '/analytics': '분석 차트',
   '/report': '리포트', '/budget': '예산', '/categories': '카테고리',
-  '/household': '가구 관리', '/ai-advisor': 'AI 어드바이저',
+  '/household': '가구 관리', '/settings': '내 정보', '/ai-advisor': 'AI 어드바이저',
 };
 
 function ThemeToggle() {

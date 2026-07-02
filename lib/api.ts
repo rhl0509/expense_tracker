@@ -145,6 +145,34 @@ export const deleteRecurring = (id: number) =>
 export const processRecurring = () =>
   req<{ status: string; processed: number }>('/transaction/process-recurring', { method: 'POST' });
 
+// ── 카드 연동(사용자별 Gmail IMAP) ────────────────────────────────────
+export type CardCredentialStatus = {
+  configured: boolean;
+  imap_user_masked: string | null;
+  has_woori: boolean;
+};
+
+export const getCardCredentials = () =>
+  req<CardCredentialStatus>('/transaction/card-credentials');
+
+export const saveCardCredentials = (data: {
+  imap_user: string;
+  imap_password: string;
+  woori_birth?: string;
+}) =>
+  req<{ message: string; configured: boolean }>('/transaction/card-credentials', {
+    method: 'POST', body: JSON.stringify(data),
+  });
+
+export const deleteCardCredentials = () =>
+  req<{ message: string }>('/transaction/card-credentials', { method: 'DELETE' });
+
+export const importCardStatement = (days = 40) =>
+  req<{ parsed: number; inserted: number; skipped: number }>(
+    `/transaction/import/card?days=${days}`,
+    { method: 'POST' },
+  );
+
 // ── AI ────────────────────────────────────────────────────────────────
 export const streamAgent = (message: string): Promise<Response> =>
   fetch(`${API_BASE}/ai/agent`, {
