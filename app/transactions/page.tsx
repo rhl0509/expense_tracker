@@ -1,13 +1,12 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
-import { getTransactions, deleteTransaction } from '@/lib/api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { getTransactions, deleteTransaction, importCardStatement } from '@/lib/api';
 import { usePaymentMethods } from '@/hooks/useSettings';
 import { fmtFull } from '@/lib/utils';
 import type { Transaction } from '@/lib/types';
 
-const PAGE_SIZE = 8;
 const TYPE_LABEL: Record<string, string> = { income: '수입', expense: '지출' };
 const TYPE_CHIPS = [{ label: '전체', type: 'all' }, { label: '수입', type: 'income' }, { label: '지출', type: 'expense' }];
 const DAY_CHIPS = [{ label: '7일', days: 7 }, { label: '30일', days: 30 }, { label: '90일', days: 90 }, { label: '1년', days: 365 }];
@@ -33,9 +32,16 @@ export default function TransactionsPage() {
   const [sortField, setSortField] = useState<'date' | 'amount' | 'type'>('date');
   const [sortDir, setSortDir] = useState(-1);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(8);
+  const tableCardRef = useRef<HTMLDivElement>(null);
 
   const delMut = useMutation({
     mutationFn: deleteTransaction,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['transactions'] }); qc.invalidateQueries({ queryKey: ['summary'] }); },
+  });
+
+  const importMut = useMutation({
+    mutationFn: () => importCardStatement(40),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['transactions'] }); qc.invalidateQueries({ queryKey: ['summary'] }); },
   });
 
@@ -71,7 +77,24 @@ export default function TransactionsPage() {
     return out;
   }, [rows, dateFrom, dateTo, activeDays, query, activeType, cat, payment, sortField, sortDir]);
 
-  useEffect(() => setPage(1), [filtered.length, query, cat, payment, activeType, activeDays]);
+  useEffect(() => setPage(1), [filtered.length, query, cat, payment, activeType, activeDays, pageSize]);
+
+  // 화면 높이에 맞춰 한 페이지 행 수를 자동 계산(항상 목록이 뷰포트를 꽉 채우도록).
+  useEffect(() => {
+    function calc() {
+      const el = tableCardRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const rowEl = el.querySelector('tbody tr') as HTMLElement | null;
+      const rowH = rowEl && rowEl.offsetHeight > 24 && rowEl.offsetHeight < 80 ? rowEl.offsetHeight : 43;
+      const THEAD = 40, FOOTER = 49, MARGIN = 24;
+      const avail = window.innerHeight - top - THEAD - FOOTER - MARGIN;
+      setPageSize(Math.max(5, Math.floor(avail / rowH)));
+    }
+    calc();
+    window.addEventListener('resize', calc);
+    return () => window.removeEventListener('resize', calc);
+  }, [isLoading, filtered.length]);
 
   const totals = useMemo(() => {
     const income = filtered.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
@@ -79,9 +102,9 @@ export default function TransactionsPage() {
     return { income, expense, net: income - expense, count: filtered.length };
   }, [filtered]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const offset = (page - 1) * PAGE_SIZE;
-  const pageRows = filtered.slice(offset, offset + PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const offset = (page - 1) * pageSize;
+  const pageRows = filtered.slice(offset, offset + pageSize);
 
   function sortBy(field: 'date' | 'amount' | 'type') {
     if (sortField === field) setSortDir((d) => d * -1);
@@ -103,8 +126,20 @@ export default function TransactionsPage() {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>거래 내역</h1>
-        <button className="btn btn-ghost btn-sm" onClick={exportCsvLocal}>↓ CSV</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => importMut.mutate()} disabled={importMut.isPending}>
+            {importMut.isPending ? '가져오는 중…' : '카드명세서 가져오기'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={exportCsvLocal}>↓ CSV</button>
+        </div>
       </div>
+      {(importMut.isSuccess || importMut.isError) && (
+        <div style={{ marginBottom: 12, fontSize: '0.82rem', color: importMut.isError ? 'var(--expense)' : 'var(--text-2)' }}>
+          {importMut.isError
+            ? `가져오기 실패: ${(importMut.error as Error).message}`
+            : `명세서 ${importMut.data!.parsed}건 중 ${importMut.data!.inserted}건 추가, ${importMut.data!.skipped}건 중복 제외`}
+        </div>
+      )}
 
       {/* 요약 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }} className="md:grid-cols-4">
@@ -141,8 +176,8 @@ export default function TransactionsPage() {
       </div>
 
       {/* 테이블 */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+      <div ref={tableCardRef} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="hidden md:block" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--hover-bg)' }}>
@@ -178,8 +213,34 @@ export default function TransactionsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* 모바일 리스트 */}
+        <div className="md:hidden">
+          {isLoading ? (
+            <div style={tdEmpty}>불러오는 중...</div>
+          ) : pageRows.length === 0 ? (
+            <div style={tdEmpty}>조건에 맞는 거래 내역이 없습니다.</div>
+          ) : pageRows.map((tx) => (
+            <div key={tx.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--card-border)' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.name}</span>
+                  <span className="badge" style={{ flexShrink: 0, background: tx.type === 'income' ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)', color: tx.type === 'income' ? 'var(--income)' : 'var(--expense)' }}>{TYPE_LABEL[tx.type]}</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {tx.date.replace(/-/g, '.')} · {tx.cat}{tx.payment ? ` · ${tx.payment}` : ''}
+                </div>
+              </div>
+              <div className="font-mono" style={{ fontWeight: 700, fontSize: '0.9rem', color: tx.type === 'income' ? 'var(--income)' : 'var(--expense)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {tx.type === 'income' ? '+' : '-'}{fmtFull(tx.amount)}
+              </div>
+              <button onClick={() => delMut.mutate(tx.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: '0.85rem', flexShrink: 0, padding: 4 }}>✕</button>
+            </div>
+          ))}
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--card-border)' }}>
-          <small style={{ color: 'var(--text-3)' }}>{filtered.length ? `${filtered.length}건 중 ${offset + 1}–${Math.min(offset + PAGE_SIZE, filtered.length)}` : '0건'}</small>
+          <small style={{ color: 'var(--text-3)' }}>{filtered.length ? `${filtered.length}건 중 ${offset + 1}–${Math.min(offset + pageSize, filtered.length)}` : '0건'}</small>
           <div style={{ display: 'flex', gap: 4 }}>
             <PageBtn label="‹" disabled={page === 1} onClick={() => setPage((p) => p - 1)} />
             {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 3), Math.max(0, page - 3) + 5).map((i) => (

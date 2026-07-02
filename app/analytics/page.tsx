@@ -18,8 +18,8 @@ export default function AnalyticsPage() {
   const [tab, setTab] = useState<'trend' | 'category' | 'payment'>('trend');
 
   const { data: monthly = [] } = useQuery({ queryKey: ['monthly-summary', year], queryFn: () => getMonthlySummary(year) });
-  const { data: catChart = [] } = useQuery({ queryKey: ['category-chart'], queryFn: getCategoryChart });
-  const { data: payment = [] } = useQuery({ queryKey: ['payment-summary'], queryFn: getPaymentSummary });
+  const { data: catChart = [] } = useQuery({ queryKey: ['category-chart', year], queryFn: () => getCategoryChart(year) });
+  const { data: payment = [] } = useQuery({ queryKey: ['payment-summary', year], queryFn: () => getPaymentSummary(year) });
 
   const sumMonth = (monthIdx: number, type: 'income' | 'expense', kw?: string) =>
     (monthly as MonthlySummary[])

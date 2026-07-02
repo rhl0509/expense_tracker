@@ -31,7 +31,7 @@ export default function DashboardPage() {
   const [showAdd, setShowAdd] = useState(false);
   const year = new Date().getFullYear();
   const { data: monthly = [] } = useQuery({ queryKey: ['monthly-summary', year], queryFn: () => getMonthlySummary(year) });
-  const { data: catChart = [] } = useQuery({ queryKey: ['category-chart'], queryFn: getCategoryChart });
+  const { data: catChart = [] } = useQuery({ queryKey: ['category-chart'], queryFn: () => getCategoryChart() });
   const { data: recent = [] } = useQuery({ queryKey: ['recent', 8], queryFn: () => getRecent(8) });
 
   const m = new Date().getMonth() + 1;
@@ -110,14 +110,14 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12, marginBottom: 14 }} className="md:grid-cols-4">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, marginBottom: 14 }} className="md:grid-cols-4">
         <KpiCard label="이번달 수입" value={income} color="var(--income)" />
         <KpiCard label="이번달 지출" value={expense} color="var(--expense)" sub={expDiff !== null ? `${Number(expDiff) > 0 ? '▲' : '▼'} ${Math.abs(Number(expDiff))}% 전달 대비` : undefined} subColor={expDiff !== null ? (Number(expDiff) > 0 ? 'var(--expense)' : 'var(--income)') : undefined} />
         <KpiCard label="저축" value={saving} color="#3b82f6" sub={`저축률 ${savingRate}%`} />
         <KpiCard label="잉여금" value={surplus} color="#8b5cf6" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14, marginBottom: 14 }} className="lg:grid-cols-2">
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 14, marginBottom: 14 }} className="lg:grid-cols-2">
         {/* 지출 분포 도넛 */}
         <div className="card" style={{ padding: 22 }}>
           <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>이번 달 지출 분포</div>
@@ -194,7 +194,7 @@ export default function DashboardPage() {
       </div>
 
       {/* 예산 + 최근거래 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }} className="lg:grid-cols-2">
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 14 }} className="lg:grid-cols-2">
         <div className="card" style={{ padding: 22 }}>
           <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>카테고리 예산</div>
           {budgetRows.length ? budgetRows.map((d) => {

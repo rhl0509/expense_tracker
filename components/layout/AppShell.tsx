@@ -23,6 +23,7 @@ const NAV_ANALYSIS: NavItem[] = [
   { href: '/report',        icon: '▤',  label: '리포트' },
   { href: '/budget',        icon: '◎',  label: '예산' },
   { href: '/categories',    icon: '◫',  label: '카테고리' },
+  { href: '/household',     icon: '⌂',  label: '가구 관리' },
   { href: '/ai-advisor',    icon: '✦',  label: 'AI 어드바이저' },
 ];
 const BOTTOM_TABS: NavItem[] = [
@@ -36,7 +37,8 @@ const BOTTOM_TABS: NavItem[] = [
 const TITLES: Record<string, string> = {
   '/record': '기록하기', '/dashboard': '대시보드', '/transactions': '거래 내역',
   '/search': '검색', '/subscriptions': '정기결제', '/analytics': '분석 차트',
-  '/report': '리포트', '/budget': '예산', '/categories': '카테고리', '/ai-advisor': 'AI 어드바이저',
+  '/report': '리포트', '/budget': '예산', '/categories': '카테고리',
+  '/household': '가구 관리', '/ai-advisor': 'AI 어드바이저',
 };
 
 function ThemeToggle() {
@@ -221,7 +223,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <header
           style={{
             background: 'var(--nav-bg)', borderBottom: '1px solid var(--nav-border)',
-            padding: '12px 16px', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+            padding: '12px 16px', paddingTop: 'calc(12px + env(safe-area-inset-top))',
+            alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
           }}
           className="flex md:hidden"
         >
@@ -231,13 +234,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <ThemeToggle />
         </header>
 
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 80px' }} className="md:p-6">
+        <main style={{ flex: 1, overflow: 'hidden auto', padding: '20px 16px 24px' }} className="md:p-6">
           {children}
         </main>
 
         {/* Mobile bottom nav */}
         <nav
-          style={{ background: 'var(--nav-bg)', borderTop: '1px solid var(--nav-border)', padding: '8px 4px', flexShrink: 0 }}
+          style={{ background: 'var(--nav-bg)', borderTop: '1px solid var(--nav-border)', padding: '8px 4px', paddingBottom: 'calc(8px + env(safe-area-inset-bottom))', flexShrink: 0 }}
           className="flex md:hidden"
         >
           {BOTTOM_TABS.map((item) => {

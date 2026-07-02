@@ -2,6 +2,29 @@ export interface User {
   user_no: number;
   user_id: string;
   user_name: string;
+  account_book_id: number | null;
+}
+
+export interface Book {
+  id: number;
+  title: string;
+  role: 'owner' | 'member';
+}
+
+export interface BookMember {
+  member_id: number;
+  role: 'owner' | 'member';
+  user_id: string;
+  name: string;
+}
+
+export interface Invite {
+  id: number;
+  token: string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  expires_at: string | null;
+  created_at: string;
+  accepted_by_name: string | null;
 }
 
 export interface Transaction {

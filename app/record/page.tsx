@@ -42,7 +42,7 @@ export default function RecordPage() {
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: getSummary });
   const { data: yearly } = useQuery({ queryKey: ['yearly-summary'], queryFn: getYearlySummary });
   const { data: transactions = [] } = useQuery({ queryKey: ['transactions'], queryFn: getTransactions });
-  const { data: paySummary = [] } = useQuery({ queryKey: ['payment-summary'], queryFn: getPaymentSummary });
+  const { data: paySummary = [] } = useQuery({ queryKey: ['payment-summary'], queryFn: () => getPaymentSummary() });
 
   const [form, setForm] = useState<FormState>({
     user: '', date: todayStr(), type: 'expense', parent: '',

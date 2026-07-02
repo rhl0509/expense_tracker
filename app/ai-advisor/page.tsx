@@ -19,7 +19,7 @@ interface ChatMsg { role: 'user' | 'assistant'; content: string; }
 export default function AiAdvisorPage() {
   const year = new Date().getFullYear();
   const { data: monthly = [] } = useQuery({ queryKey: ['monthly-summary', year], queryFn: () => getMonthlySummary(year) });
-  const { data: catChart = [] } = useQuery({ queryKey: ['category-chart'], queryFn: getCategoryChart });
+  const { data: catChart = [] } = useQuery({ queryKey: ['category-chart'], queryFn: () => getCategoryChart() });
   useQuery({ queryKey: ['recent', 20], queryFn: () => getRecent(20) });
 
   const ctx = useMemo<FinCtx | null>(() => {

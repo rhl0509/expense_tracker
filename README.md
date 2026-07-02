@@ -8,7 +8,8 @@ Next.js(App Router) 기반이며, 백엔드(FastAPI)와 연동해 동작합니�
 - 차트: **Chart.js + react-chartjs-2**
 - 스타일: **Tailwind CSS 4**
 - 기타: `@dnd-kit`(드래그 정렬), `react-markdown`(AI 조언 렌더)
-- 백엔드: 형제 폴더 `../expense_tracker` (FastAPI, 포트 **5000**)
+- 백엔드: 상위 폴더 `../` = `expense_tracker` 루트 (FastAPI, 포트 **5000**). 이 프론트는 모노레포의 `frontend/`
+- 통신: 동일 출처 상대경로 호출 → `next.config.ts` rewrites가 백엔드(5000)로 프록시 (CORS 불필요)
 
 ---
 
@@ -82,29 +83,33 @@ npm run dev
 브라우저에서 [http://localhost:3000](http://localhost:3000) 접속.
 
 ### 프론트 + 백엔드 한 번에 실행 (Windows)
-저장소에 포함된 편의 스크립트를 더블클릭하거나 실행하세요.
+모노레포 루트(`../`)의 편의 스크립트를 실행하세요.
 ```bat
-start_all.bat
+..\start_all.bat
 ```
-- 백엔드(`../expense_tracker`)를 포트 **5000**, 프론트를 포트 **3000**으로 각각 새 창에서 실행
-- `node_modules`가 없으면 자동으로 `npm install` 후 `npm run dev`
+- 백엔드(`expense_tracker` 루트)를 포트 **5000**, 프론트(`frontend`)를 포트 **3000**으로 각각 새 창에서 실행
+- `frontend\node_modules`가 없으면 자동으로 `npm install` 후 `npm run dev`
 - 잠시 후 브라우저에서 `http://localhost:3000`을 자동으로 엽니다
 
 ---
 
 ## 백엔드 연동
 
-API 기본 주소는 [`lib/api.ts`](lib/api.ts)에 정의되어 있습니다.
+동일 출처 **상대경로**로 호출하고, `next.config.ts`의 rewrites가 백엔드(5000)로 프록시합니다.
 
 ```ts
-export const API_BASE = 'http://localhost:5000';
+// lib/api.ts — 상대경로(빈 base). rewrites가 프록시하므로 절대 URL·CORS 불필요.
+export const API_BASE = '';
+```
+```ts
+// next.config.ts — /auth /transaction /ai /health → http://127.0.0.1:5000
 ```
 
-- 모든 요청은 `credentials: 'include'`로 **쿠키 기반 인증**을 사용합니다.
-- 백엔드는 형제 폴더 `../expense_tracker`(FastAPI)입니다.
-- 배포 환경 등에서 주소를 바꾸려면 `lib/api.ts`의 `API_BASE`를 수정하세요.
+- 모든 요청은 `credentials: 'include'`로 **쿠키 기반 인증**을 사용합니다(동일 출처라 세션 쿠키 자동 전달).
+- 백엔드는 상위 폴더 `expense_tracker` 루트(FastAPI)입니다.
+- 백엔드 주소를 바꾸려면 `next.config.ts`의 `BACKEND`(환경변수 `BACKEND_URL`)를 수정하세요.
 
-> 백엔드가 꺼져 있으면 로그인·데이터 조회가 실패합니다. `start_all.bat`으로 함께 띄우는 것을 권장합니다.
+> 백엔드가 꺼져 있으면 프록시가 502/500을 반환합니다. 루트 `start_all.bat`으로 함께 띄우는 것을 권장합니다.
 
 ---
 
@@ -122,7 +127,7 @@ export const API_BASE = 'http://localhost:5000';
 ## 프로젝트 구조
 
 ```
-expense_frontend/
+expense_tracker/frontend/    # 모노레포의 프론트 (백엔드는 상위 expense_tracker 루트)
 ├─ app/                      # App Router 페이지
 │  ├─ (app)/layout.tsx       # 로그인 후 공통 레이아웃(앱 셸)
 │  ├─ layout.tsx             # 루트 레이아웃
@@ -139,11 +144,11 @@ expense_frontend/
 │  └─ providers/             # QueryProvider, ToastProvider
 ├─ hooks/                    # useAuth, useCategories, useSettings
 ├─ lib/
-│  ├─ api.ts                 # API 호출 래퍼 (API_BASE 정의)
+│  ├─ api.ts                 # API 호출 래퍼 (상대경로, API_BASE='')
 │  ├─ types.ts               # 공용 타입
 │  └─ utils.ts
 ├─ public/
-├─ start_all.bat             # 프론트+백엔드 동시 실행(Windows)
+├─ next.config.ts            # rewrites: /auth /transaction /ai /health → 5000
 └─ (설정) next.config.ts, tsconfig.json, eslint.config.mjs, postcss.config.mjs
 ```
 

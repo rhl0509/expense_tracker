@@ -2,9 +2,11 @@ import type {
   User, Transaction, Category, Summary, CategoryChart,
   CategorySummary, PaymentSummary, MonthlySummary,
   RecurringTransaction, AddTransactionPayload,
+  Book, BookMember, Invite,
 } from './types';
 
-export const API_BASE = 'http://localhost:5000';
+// 동일 출처 상대경로로 호출한다(next.config rewrites가 백엔드로 프록시).
+export const API_BASE = '';
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -36,13 +38,44 @@ export const register = (data: { user_id: string; password: string; name: string
 
 export const logout = () => fetch(`${API_BASE}/auth/logout`, { credentials: 'include' });
 
+// ── 가구(account_book) 멤버십 / 초대 ────────────────────────────────────
+export const getBooks = () =>
+  req<{ active_book_id: number | null; books: Book[] }>('/auth/books');
+
+export const switchBook = (account_book_id: number) =>
+  req<{ message: string; account_book_id: number }>('/auth/books/switch', {
+    method: 'POST', body: JSON.stringify({ account_book_id }),
+  });
+
+export const getBookMembers = () =>
+  req<{ members: BookMember[] }>('/auth/books/members');
+
+export const removeBookMember = (member_id: number) =>
+  req<{ message: string }>(`/auth/books/members/${member_id}`, { method: 'DELETE' });
+
+export const createInvite = () =>
+  req<{ token: string; expires_at: string }>('/auth/invites', { method: 'POST' });
+
+export const getInvites = () =>
+  req<{ invites: Invite[] }>('/auth/invites');
+
+export const acceptInvite = (token: string) =>
+  req<{ message: string; account_book_id: number }>('/auth/invites/accept', {
+    method: 'POST', body: JSON.stringify({ token }),
+  });
+
+export const revokeInvite = (invite_id: number) =>
+  req<{ message: string }>(`/auth/invites/${invite_id}/revoke`, { method: 'POST' });
+
 // ── Transactions ──────────────────────────────────────────────────────
 export const getTransactions = () => req<Transaction[]>('/transaction/data');
 export const getSummary = () => req<Summary>('/transaction/summary');
 export const getYearlySummary = () => req<Summary>('/transaction/yearly-summary');
-export const getCategoryChart = () => req<CategoryChart[]>('/transaction/category-chart');
+export const getCategoryChart = (year?: number) =>
+  req<CategoryChart[]>(`/transaction/category-chart${year ? `?year=${year}` : ''}`);
 export const getCategorySummary = () => req<CategorySummary[]>('/transaction/category-summary');
-export const getPaymentSummary = () => req<PaymentSummary[]>('/transaction/payment-summary');
+export const getPaymentSummary = (year?: number) =>
+  req<PaymentSummary[]>(`/transaction/payment-summary${year ? `?year=${year}` : ''}`);
 export const getMonthlySummary = (year: number) =>
   req<MonthlySummary[]>(`/transaction/monthly-summary?year=${year}`);
 
@@ -65,6 +98,12 @@ export const deleteTransaction = (id: number) =>
 
 export const resetData = () =>
   req<{ message: string }>('/transaction/reset', { method: 'POST' });
+
+export const importCardStatement = (days = 40) =>
+  req<{ parsed: number; inserted: number; skipped: number }>(
+    `/transaction/import/card?days=${days}`,
+    { method: 'POST' },
+  );
 
 export const exportCsv = () =>
   fetch(`${API_BASE}/transaction/export`, { credentials: 'include' });
