@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getTransactions, deleteTransaction, importCardStatement } from '@/lib/api';
+import { getTransactions, deleteTransaction } from '@/lib/api';
 import { usePaymentMethods } from '@/hooks/useSettings';
 import { fmtFull } from '@/lib/utils';
 import type { Transaction } from '@/lib/types';
@@ -37,11 +37,6 @@ export default function TransactionsPage() {
 
   const delMut = useMutation({
     mutationFn: deleteTransaction,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['transactions'] }); qc.invalidateQueries({ queryKey: ['summary'] }); },
-  });
-
-  const importMut = useMutation({
-    mutationFn: () => importCardStatement(40),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['transactions'] }); qc.invalidateQueries({ queryKey: ['summary'] }); },
   });
 
@@ -127,19 +122,9 @@ export default function TransactionsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>거래 내역</h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => importMut.mutate()} disabled={importMut.isPending}>
-            {importMut.isPending ? '가져오는 중…' : '카드명세서 가져오기'}
-          </button>
           <button className="btn btn-ghost btn-sm" onClick={exportCsvLocal}>↓ CSV</button>
         </div>
       </div>
-      {(importMut.isSuccess || importMut.isError) && (
-        <div style={{ marginBottom: 12, fontSize: '0.82rem', color: importMut.isError ? 'var(--expense)' : 'var(--text-2)' }}>
-          {importMut.isError
-            ? `가져오기 실패: ${(importMut.error as Error).message}`
-            : `명세서 ${importMut.data!.parsed}건 중 ${importMut.data!.inserted}건 추가, ${importMut.data!.skipped}건 중복 제외`}
-        </div>
-      )}
 
       {/* 요약 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }} className="md:grid-cols-4">

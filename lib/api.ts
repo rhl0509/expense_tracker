@@ -99,12 +99,6 @@ export const deleteTransaction = (id: number) =>
 export const resetData = () =>
   req<{ message: string }>('/transaction/reset', { method: 'POST' });
 
-export const importCardStatement = (days = 40) =>
-  req<{ parsed: number; inserted: number; skipped: number }>(
-    `/transaction/import/card?days=${days}`,
-    { method: 'POST' },
-  );
-
 export const exportCsv = () =>
   fetch(`${API_BASE}/transaction/export`, { credentials: 'include' });
 

@@ -29,12 +29,6 @@ export default function HouseholdPage() {
   const [newInvite, setNewInvite] = useState<{ token: string; expires_at: string } | null>(null);
   const [delMember, setDelMember] = useState<BookMember | null>(null);
 
-  const refetchAll = () => {
-    qc.invalidateQueries({ queryKey: ['books'] });
-    qc.invalidateQueries({ queryKey: ['book-members'] });
-    qc.invalidateQueries({ queryKey: ['invites'] });
-  };
-
   const switchMut = useMutation({
     mutationFn: switchBook,
     onSuccess: () => { qc.invalidateQueries(); toast('가구를 전환했습니다.', 'success'); },
