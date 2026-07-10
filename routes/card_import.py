@@ -12,19 +12,28 @@ routes/card_import.py — 사용자별 Gmail IMAP 카드 명세서 자동 수집
 
 수집·삽입: 카드사(현대·KB·우리) 명세서 HTML 첨부를 파싱해 이용금액 기준으로
 transactions 에 삽입한다. 우리카드는 VestMail 암호화라 저장된 생년월일 6자리로
-복호화(vestmail/decrypt.js, node+jsdom)한다. 중복은 (날짜·가맹점·금액·결제수단)
-그룹별로 명세서 건수에서 기존 DB 건수를 뺀 만큼만 삽입한다.
+복호화(vestmail/decrypt.js, node+jsdom)한다.
+
+중복방지는 영구 "수집 원장"(card_import_ledger) 기반이다. 라인별 결정적 지문
+(날짜·가맹점·금액·결제수단의 SHA-256, statement_fingerprint)을 원장에 기록하고,
+원장에 이미 있으면 거래행 존재 여부와 무관하게 건너뛴다 — 사용자가 자동수집
+거래를 지우거나(부활 방지) 가맹점명·금액을 고쳐도(이중기장 방지) 재삽입되지
+않는다. (장부, 지문, line_seq) UNIQUE 제약이 동시 수집 경쟁도 하나만 통과시킨다.
 """
 import base64
+import hashlib
 import logging
+import re
 import time
 from collections import Counter, defaultdict
 from threading import Event, Lock, Thread
 
+from pymysql.err import IntegrityError
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastapi import APIRouter, Request, Depends
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from config import Config
@@ -197,7 +206,9 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
     woori_birth = _decrypt(cred["woori_birth_enc"]) if cred["woori_birth_enc"] else None
 
     try:
-        rows = fetch_all_statements(
+        # IMAP 수집은 수십 초 걸리는 블로킹 IO → 이벤트 루프를 막지 않게 스레드풀에서 실행
+        rows = await run_in_threadpool(
+            fetch_all_statements,
             cred["imap_user"], imap_password, days=days, woori_birth=woori_birth,
         )
     except Exception:
@@ -206,7 +217,8 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
 
     account_book_id = get_account_book_id(request)
     try:
-        inserted = _insert_rows(user_no, account_book_id, rows)
+        # 최대 500건 삽입도 블로킹 DB IO → 스레드풀
+        inserted = await run_in_threadpool(_insert_rows, user_no, account_book_id, rows)
     except Exception:
         logger.exception("카드 명세서 저장 실패")
         return JSONResponse({"error": "서버 내부 오류가 발생했습니다."}, status_code=500)
@@ -218,18 +230,73 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
     }, status_code=200)
 
 
+# ── 지문(fingerprint) — 수집 원장 중복방지의 핵심 ─────────────────────
+# 같은 명세서 라인은 (1) 새로 파싱한 row-dict 에서든 (2) DB 에 이미 저장된
+# transactions 행에서든 항상 같은 지문이 나와야 한다(백필 정합 조건).
+# 정규화는 migrations/005_card_import_ledger.sql 의 SQL 표현식과 반드시 동일:
+#   _norm_text   ↔ LOWER(TRIM(REGEXP_REPLACE(REPLACE(REPLACE(x, NBSP,' '), U+3000,' '),
+#                  '[[:space:]]+', ' ')))
+#   _norm_amount ↔ TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(x AS CHAR)))
+# (자동수집 721행 전수 라운드트립 검증 완료 — 마이그레이션 파일 주석 참고)
+_WS_RE = re.compile(r"[ \t\r\n\v\f 　]+")
+
+
+def _norm_text(s) -> str:
+    """공백류(NBSP·전각 포함)를 한 칸으로 접고 양끝 제거 + 소문자."""
+    return _WS_RE.sub(" ", str(s)).strip().lower()
+
+
+def _norm_amount(amount) -> str:
+    """파서의 int 와 DB 의 DECIMAL(15,2)가 같은 문자열이 되게 후행 0·점 제거."""
+    s = str(amount)
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s
+
+
+def statement_fingerprint(date_str, merchant, amount, payment_method) -> str:
+    """명세서 라인의 결정적 지문(SHA-256 hex 64자). 스코프(장부)는 포함하지 않고
+    원장 UNIQUE 키의 account_book_id 컬럼으로 건다."""
+    base = "|".join((
+        str(date_str), _norm_text(merchant), _norm_amount(amount),
+        _norm_text(payment_method),
+    ))
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
+def _ledger_lines(rows):
+    """rows → [(fingerprint, line_seq, row), ...].
+
+    같은 명세서에 완전 동일 라인이 n번 나올 수 있어(예: 오락실 1,000원 x10)
+    지문만으로는 다건을 구분 못 한다 → 명세서(첨부, row['_stmt']) 단위로 지문별
+    1..n 의 line_seq 를 부여한다. 재발송 등으로 같은 명세서가 배치에 두 번 들어와도
+    (지문, seq) 셋이 같아져 자연히 한 벌로 접힌다.
+    """
+    per_stmt = Counter()
+    seen = set()
+    out = []
+    for r in rows:
+        fp = statement_fingerprint(
+            r["date"], r["merchant"], r["amount"], r["payment_method"]
+        )
+        per_stmt[(r.get("_stmt"), fp)] += 1
+        seq = per_stmt[(r.get("_stmt"), fp)]
+        if (fp, seq) in seen:
+            continue
+        seen.add((fp, seq))
+        out.append((fp, seq, r))
+    return out
+
+
 # ── 삽입 코어 (HTTP 핸들러·스케줄러 공용) ─────────────────────────────
 def _insert_rows(user_no, account_book_id, rows) -> int:
-    """파싱된 명세서 rows 를 (날짜·가맹점·금액·결제수단) 그룹 중복 제거 후 삽입.
+    """파싱된 명세서 rows 를 수집 원장(card_import_ledger) 기준으로 중복 제거 후 삽입.
 
-    각 그룹은 명세서 건수에서 기존 DB 건수를 뺀 만큼만 넣는다. 반환: 삽입 건수.
-    실패 시 롤백 후 예외를 그대로 올린다(호출측이 로깅·응답 처리).
+    라인별 지문이 원장에 있으면 거래행 존재 여부와 무관하게 skip(삭제 부활·수정
+    이중기장 방지). 없으면 (원장 INSERT + 거래 INSERT)를 한 트랜잭션으로 커밋한다.
+    원장 UNIQUE 가 동시 수집 경쟁을 중재한다: 늦은 쪽은 duplicate-key(1062)로 skip.
+    반환: 삽입 건수. 실패 시 롤백 후 예외를 그대로 올린다(호출측이 로깅·응답 처리).
     """
-    wanted = Counter(
-        (r["date"], r["merchant"], r["amount"], r["payment_method"]) for r in rows
-    )
-    meta = {(r["date"], r["merchant"], r["amount"], r["payment_method"]): r for r in rows}
-
     inserted = 0
     conn = get_db_connection()
     try:
@@ -241,37 +308,49 @@ def _insert_rows(user_no, account_book_id, rows) -> int:
             name_to_id = {row["name"]: row["id"] for row in cursor.fetchall()}
             fallback_id = name_to_id.get(_FALLBACK_CATEGORY)
 
-            for key, want_cnt in wanted.items():
+            for fp, seq, r in _ledger_lines(rows):
                 if inserted >= _MAX_IMPORT_INSERT:
                     break
-                date_val, merchant, amount, payment_method = key
-                cursor.execute(
-                    """SELECT COUNT(*) AS c FROM transactions
-                       WHERE account_book_id = %s AND transaction_date = %s
-                         AND title = %s AND amount = %s AND payment_method = %s""",
-                    (account_book_id, date_val, merchant, amount, payment_method),
-                )
-                existing = cursor.fetchone()["c"]
-                to_insert = want_cnt - existing
-                if to_insert <= 0:
-                    continue
-                r = meta[key]
-                category_id = name_to_id.get(categorize_merchant(merchant), fallback_id)
-                relation = f"/{r['relation']}" if r["relation"] else ""
-                memo = f"{r['card']}{relation} · {payment_method} 명세서 자동수집"
-                for _ in range(to_insert):
-                    if inserted >= _MAX_IMPORT_INSERT:
-                        break
+                try:
                     cursor.execute(
-                        """INSERT INTO transactions
-                           (account_book_id, category_id, member_id, type, amount,
-                            title, memo, transaction_date, payment_method, user)
-                           VALUES (%s, %s, %s, 'expense', %s, %s, %s, %s, %s, '공용')""",
-                        (account_book_id, category_id, user_no, amount,
-                         merchant, memo, date_val, payment_method),
+                        """INSERT INTO card_import_ledger
+                           (account_book_id, fingerprint, line_seq, transaction_date,
+                            merchant, amount, payment_method, member_id)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (account_book_id, fp, seq, r["date"], r["merchant"],
+                         r["amount"], r["payment_method"], user_no),
                     )
-                    inserted += 1
-        conn.commit()
+                except IntegrityError as exc:
+                    if exc.args[0] != 1062:  # 1062 = duplicate key
+                        raise
+                    # 이미 수집된 라인(원장에 지문 존재) — 거래행이 지워졌어도 skip.
+                    cursor.execute(
+                        """UPDATE card_import_ledger
+                           SET last_seen_at = CURRENT_TIMESTAMP
+                           WHERE account_book_id = %s AND fingerprint = %s
+                             AND line_seq = %s""",
+                        (account_book_id, fp, seq),
+                    )
+                    conn.commit()
+                    continue
+                ledger_id = cursor.lastrowid
+                category_id = name_to_id.get(categorize_merchant(r["merchant"]), fallback_id)
+                relation = f"/{r['relation']}" if r["relation"] else ""
+                memo = f"{r['card']}{relation} · {r['payment_method']} 명세서 자동수집"
+                cursor.execute(
+                    """INSERT INTO transactions
+                       (account_book_id, category_id, member_id, type, amount,
+                        title, memo, transaction_date, payment_method, user)
+                       VALUES (%s, %s, %s, 'expense', %s, %s, %s, %s, %s, '공용')""",
+                    (account_book_id, category_id, user_no, r["amount"],
+                     r["merchant"], memo, r["date"], r["payment_method"]),
+                )
+                cursor.execute(
+                    "UPDATE card_import_ledger SET transaction_id = %s WHERE id = %s",
+                    (cursor.lastrowid, ledger_id),
+                )
+                conn.commit()  # (원장 + 거래) 한 쌍을 원자적으로 확정
+                inserted += 1
     except Exception:
         conn.rollback()
         raise
@@ -282,7 +361,7 @@ def _insert_rows(user_no, account_book_id, rows) -> int:
 
 # ── 자동 수집 스케줄러 (하루 1회, 자격증명 보유 멤버 전원) ─────────────
 # 이메일 명세서는 카드사가 월 1회만 보내므로 실시간이 아니라 일 1회 폴링으로
-# 충분하다. 최근 _SCHED_DAYS 일치를 매번 재수집하되 그룹별 중복 제거로 idempotent.
+# 충분하다. 최근 _SCHED_DAYS 일치를 매번 재수집하되 수집 원장 지문으로 idempotent.
 _SCHED_INTERVAL = 24 * 3600
 _SCHED_DAYS = 40
 _scheduler_stop = Event()
