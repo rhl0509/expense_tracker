@@ -39,7 +39,7 @@ from fastapi.responses import JSONResponse
 from config import Config
 from database.db_connection import get_db_connection
 from routes.utils import (
-    get_user_no, get_account_book_id, get_default_book_id, api_require_login,
+    get_user_no, get_default_book_id, api_require_login,
 )
 from card_statement import fetch_all_statements, categorize_merchant
 
@@ -215,7 +215,12 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
         logger.exception("카드 명세서 메일 수집 실패")
         return JSONResponse({"error": "메일 수집에 실패했습니다. 앱 비밀번호를 확인하세요."}, status_code=502)
 
-    account_book_id = get_account_book_id(request)
+    # 카드 명세서 자동수집은 "내 카드를 내 가계부에 동기화"하는 멤버 단위 기능이므로
+    # 세션 활성 장부가 아니라 멤버 대표 장부로 삽입한다(스케줄러와 동일 대상 —
+    # 수동/스케줄러가 서로 다른 장부를 타깃해 생기던 장부간 중복(M3) 차단).
+    account_book_id = _member_default_book(user_no)
+    if account_book_id is None:
+        return JSONResponse({"error": "수집 대상 장부를 찾을 수 없습니다."}, status_code=400)
     try:
         # 최대 500건 삽입도 블로킹 DB IO → 스레드풀
         inserted = await run_in_threadpool(_insert_rows, user_no, account_book_id, rows)
