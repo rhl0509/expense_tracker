@@ -15,7 +15,15 @@ from datetime import datetime
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+# ANTHROPIC_API_KEY 는 선택 설정(config.py)이므로 import 시점이 아니라 첫 사용 시 생성한다.
+_client = None
+
+
+def _get_client() -> anthropic.Anthropic:
+    global _client
+    if _client is None:
+        _client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+    return _client
 
 # ── AI 호출 rate limit (유저별 슬라이딩 윈도우, 프로세스 로컬) ──
 _RATE_LIMIT = 20      # 윈도우당 최대 요청 수
@@ -41,6 +49,7 @@ def _rate_limited(user_no) -> bool:
 _MAX_CHAT_MESSAGES = 40     # 대화 턴 상한
 _MAX_MESSAGE_CHARS = 8000   # 메시지 1건 길이 상한
 _MAX_TOTAL_CHARS = 24000    # 전체 길이 상한
+_MAX_AGENT_ITERATIONS = 8   # /ai/agent 도구 호출 루프 상한
 
 
 def _sanitize_chat_messages(raw):
@@ -202,7 +211,7 @@ async def analyze(request: Request, _=Depends(api_require_login)):
 
     def generate():
         try:
-            with client.messages.stream(model="claude-sonnet-4-6", max_tokens=8000, system=SYSTEM_PROMPT,
+            with _get_client().messages.stream(model="claude-sonnet-4-6", max_tokens=8000, system=SYSTEM_PROMPT,
                                         messages=[{"role": "user", "content": prompt}]) as stream:
                 for text in stream.text_stream:
                     yield text
@@ -226,10 +235,20 @@ async def chat(request: Request, _=Depends(api_require_login)):
     if err:
         return JSONResponse({"error": err}, status_code=400)
 
+    # 클라이언트가 보낸 system(재정 요약 컨텍스트)을 검증 후 사용. 없으면 기본 프롬프트.
+    system_raw = data.get('system')
+    if system_raw is not None and not isinstance(system_raw, str):
+        return JSONResponse({"error": "system 형식이 올바르지 않습니다."}, status_code=400)
+    system_prompt = (system_raw or '').strip()
+    if len(system_prompt) > _MAX_MESSAGE_CHARS:
+        return JSONResponse({"error": "system 프롬프트가 너무 깁니다."}, status_code=400)
+    if not system_prompt:
+        system_prompt = SYSTEM_PROMPT
+
     def generate():
         try:
-            with client.messages.stream(model="claude-sonnet-4-6", max_tokens=8000,
-                                        system=SYSTEM_PROMPT, messages=messages) as stream:
+            with _get_client().messages.stream(model="claude-sonnet-4-6", max_tokens=8000,
+                                        system=system_prompt, messages=messages) as stream:
                 for text in stream.text_stream:
                     yield text
         except anthropic.AuthenticationError:
@@ -266,8 +285,9 @@ async def agent(request: Request, _=Depends(api_require_login)):
 
     def generate():
         try:
-            while True:
-                with client.messages.stream(model="claude-sonnet-4-6", max_tokens=8000,
+            # 도구 호출 루프 상한: 무한 루프·비용 폭주 방지
+            for _iteration in range(_MAX_AGENT_ITERATIONS):
+                with _get_client().messages.stream(model="claude-sonnet-4-6", max_tokens=8000,
                                             system=system_blocks, tools=TOOLS, messages=messages) as stream:
                     for text in stream.text_stream:
                         yield text
@@ -284,6 +304,8 @@ async def agent(request: Request, _=Depends(api_require_login)):
                     result_str = _execute_tool(tu.name, tu.input, account_book_id)
                     tool_results.append({"type": "tool_result", "tool_use_id": tu.id, "content": result_str})
                 messages.append({"role": "user", "content": tool_results})
+            else:
+                yield "\n[안내] 도구 호출 한도에 도달해 응답을 마칩니다."
 
         except anthropic.AuthenticationError:
             yield "[오류] API 키가 유효하지 않습니다."

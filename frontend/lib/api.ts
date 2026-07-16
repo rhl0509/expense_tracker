@@ -36,7 +36,7 @@ export const register = (data: { user_id: string; password: string; name: string
     body: JSON.stringify(data),
   });
 
-export const logout = () => fetch(`${API_BASE}/auth/logout`, { credentials: 'include' });
+export const logout = () => fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
 
 // ── 가구(account_book) 멤버십 / 초대 ────────────────────────────────────
 export const getBooks = () =>

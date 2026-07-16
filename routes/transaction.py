@@ -6,7 +6,7 @@ from database.db_connection import get_db_connection
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation
 from io import StringIO
-from routes.utils import get_user_no, get_account_book_id, api_require_login
+from routes.utils import get_user_no, get_account_book_id, api_require_login, is_book_owner
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -265,7 +265,23 @@ async def get_recurring_list(request: Request, _=Depends(api_require_login)):
 @router.post('/recurring/add')
 async def add_recurring(request: Request, _=Depends(api_require_login)):
     data = await request.json()
-    category_id = data['category_id']
+    category_id = data.get('category_id')
+    title       = (data.get('title') or '').strip()
+    type_val    = data.get('type')
+    user_tag    = data.get('user') or '공용'
+    if not title or len(title) > 200:
+        return JSONResponse({"error": "제목이 올바르지 않습니다."}, status_code=400)
+    if type_val not in ('income', 'expense'):
+        return JSONResponse({"error": "type은 income 또는 expense여야 합니다."}, status_code=400)
+    try:
+        repeat_day = int(data.get('repeat_day'))
+        amount = Decimal(str(data.get('amount')))
+    except (InvalidOperation, TypeError, ValueError):
+        return JSONResponse({"error": "반복일 또는 금액이 올바르지 않습니다."}, status_code=400)
+    if not (1 <= repeat_day <= 31):
+        return JSONResponse({"error": "반복일은 1~31 사이여야 합니다."}, status_code=400)
+    if not (0 < amount < Decimal('1000000000000')):
+        return JSONResponse({"error": "금액이 올바르지 않습니다."}, status_code=400)
     account_book_id = get_account_book_id(request)
     conn = get_db_connection()
     try:
@@ -274,7 +290,7 @@ async def add_recurring(request: Request, _=Depends(api_require_login)):
                 return JSONResponse({"error": "유효하지 않은 카테고리입니다."}, status_code=400)
             cursor.execute(
                 "INSERT INTO recurring_transactions (account_book_id, category_id, title, type, repeat_day, user, amount) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (account_book_id, category_id, data['title'], data['type'], data['repeat_day'], data['user'], data['amount'])
+                (account_book_id, category_id, title, type_val, repeat_day, user_tag, amount)
             )
         conn.commit()
         return JSONResponse({"message": "success"}, status_code=201)
@@ -542,10 +558,14 @@ async def get_yearly_summary(request: Request, _=Depends(api_require_login)):
 
 @router.post('/reset')
 async def reset_data(request: Request, _=Depends(api_require_login)):
+    user_no = get_user_no(request)
     account_book_id = get_account_book_id(request)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # 가구 전체 거래를 삭제하는 파괴적 작업 → 가구장(owner)만 허용
+            if not is_book_owner(cursor, account_book_id, user_no):
+                return JSONResponse({"error": "가구장만 데이터를 초기화할 수 있습니다."}, status_code=403)
             cursor.execute("DELETE FROM transactions WHERE account_book_id = %s", (account_book_id,))
         conn.commit()
         return {"message": "reset", "deleted": cursor.rowcount}
