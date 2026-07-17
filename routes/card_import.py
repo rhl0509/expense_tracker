@@ -417,13 +417,64 @@ def _import_all_members(days: int = _SCHED_DAYS):
             logger.exception("스케줄 수집 실패: member %s", user_no)
 
 
+def _seconds_until_next_run() -> float:
+    """다음 실행까지 남은 초. 한 번도 안 돌았거나 주기가 지났으면 0.
+
+    경과 시간은 DB의 NOW()로 계산한다 — 앱과 DB의 시계·타임존이 어긋나도 안전하다.
+    """
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT TIMESTAMPDIFF(SECOND, last_run_at, NOW()) AS elapsed "
+                    "FROM card_import_schedule WHERE id = 1"
+                )
+                row = cursor.fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        # 테이블 누락(마이그레이션 미적용)·DB 장애 등. 0을 주면 바쁜 루프가 되므로
+        # 한 주기 쉬고 다시 본다.
+        logger.exception("스케줄러: 마지막 실행 시각 조회 실패 — 한 주기 대기")
+        return _SCHED_INTERVAL
+    if not row or row["elapsed"] is None:
+        return 0.0
+    return max(0.0, _SCHED_INTERVAL - float(row["elapsed"]))
+
+
+def _mark_run():
+    """실행을 시도했음을 기록한다. 실패해도 남긴다 — 안 남기면 대기가 0이 되어
+    실패가 계속될 때 IMAP을 쉬지 않고 두드리는 바쁜 루프가 된다."""
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO card_import_schedule (id, last_run_at) VALUES (1, NOW()) "
+                    "ON DUPLICATE KEY UPDATE last_run_at = NOW()"
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("스케줄러: 마지막 실행 시각 기록 실패")
+
+
 def _scheduler_loop():
-    # 기동 직후 즉시 돌지 않고 한 주기 뒤부터 실행(기동 폭주·테스트 영향 방지).
-    while not _scheduler_stop.wait(_SCHED_INTERVAL):
+    # 대기 시간을 DB의 마지막 실행 시각에서 계산한다. 재시작해도 주기가 리셋되지
+    # 않고, 기동 시 이미 주기가 지났으면 즉시 1회 돈다.
+    while True:
+        delay = _seconds_until_next_run()
+        logger.info("카드 자동수집: 다음 실행까지 %.0f분", delay / 60)
+        if _scheduler_stop.wait(delay):
+            return
         try:
             _import_all_members()
         except Exception:
             logger.exception("카드 명세서 스케줄러 주기 실행 실패")
+        finally:
+            _mark_run()
 
 
 def start_scheduler() -> Thread:

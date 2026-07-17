@@ -20,7 +20,8 @@ export default function LoginPage() {
     try {
       await login(form.user_id, form.password);
       await qc.invalidateQueries({ queryKey: ['me'] });
-      router.replace('/dashboard');
+      // 홈은 기록하기다(app/page.tsx의 / 리디렉트, 사이드바 첫 항목과 같은 곳).
+      router.replace('/record');
     } catch (err: unknown) {
       setError((err as Error).message || '로그인에 실패했습니다.');
     } finally {
