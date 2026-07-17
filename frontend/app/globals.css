@@ -115,6 +115,10 @@ body {
 }
 .field:focus { border-color: var(--accent); }
 .field::placeholder { color: var(--text-3); }
+/* 드롭다운 목록은 브라우저가 기본 흰 배경으로 그려서, 다크모드의 밝은 글자색이 묻힌다.
+   --input-bg는 반투명이라 여기선 못 쓰고 불투명한 --card-bg로 깔아준다. */
+.field option,
+.field optgroup { background: var(--card-bg); color: var(--text); }
 
 /* ── Btn ───────────────────────────────────────────────────────────── */
 .btn {
