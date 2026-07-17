@@ -6,6 +6,7 @@ teardown에서 모두 삭제한다. 공유 자원(account_book=2의 settings)은
 """
 import os
 import uuid
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -187,14 +188,63 @@ def test_payment_methods(client):
 def test_recurring(client, created, cat_id):
     r = client.post(
         "/transaction/recurring/add",
-        json={"category_id": cat_id, "title": "pytest구독", "type": "expense", "repeat_day": 15, "user": "공용", "amount": 9900},
+        json={"category_id": cat_id, "title": "pytest구독", "type": "expense", "repeat_day": 15,
+              "user": "공용", "payment_method": "KB카드", "amount": 9900},
     )
     assert r.status_code == 201
     lst = client.get("/transaction/recurring/list").json()
     item = next((x for x in lst if x["title"] == "pytest구독"), None)
     assert item is not None
+    assert item["payment_method"] == "KB카드"      # 저장·조회 왕복
     created["recurring_ids"].append(item["id"])
     assert client.delete(f"/transaction/recurring/delete/{item['id']}").status_code == 200
+
+
+def test_recurring_payment_method_optional_and_bounded(client, cat_id):
+    """결제수단은 선택이고 50자를 넘을 수 없다(컬럼이 varchar(50))."""
+    r = client.post(
+        "/transaction/recurring/add",
+        json={"category_id": cat_id, "title": "pytest무지정", "type": "expense", "repeat_day": 15,
+              "user": "공용", "amount": 100},
+    )
+    assert r.status_code == 201
+    item = next(x for x in client.get("/transaction/recurring/list").json() if x["title"] == "pytest무지정")
+    assert item["payment_method"] is None
+    client.delete(f"/transaction/recurring/delete/{item['id']}")
+
+    assert client.post(
+        "/transaction/recurring/add",
+        json={"category_id": cat_id, "title": "pytest긴것", "type": "expense", "repeat_day": 15,
+              "user": "공용", "payment_method": "가" * 51, "amount": 100},
+    ).status_code == 400
+
+
+def test_process_recurring_carries_payment_method(client, created, cat_id):
+    """자동생성 거래에 결제수단이 실려야 한다 — 안 실리면 매달 쌓이는 구독료가
+    결제수단별 통계에서 통째로 빠진다(고치기 전 동작)."""
+    day = min(datetime.now().day, 28)
+    r = client.post(
+        "/transaction/recurring/add",
+        json={"category_id": cat_id, "title": "pytest자동", "type": "expense", "repeat_day": day,
+              "user": "공용", "payment_method": "우리카드", "amount": 1234},
+    )
+    assert r.status_code == 201
+    rec = next(x for x in client.get("/transaction/recurring/list").json() if x["title"] == "pytest자동")
+    created["recurring_ids"].append(rec["id"])
+
+    assert client.post("/transaction/process-recurring").status_code == 200
+
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT payment_method FROM transactions WHERE account_book_id=%s AND title=%s",
+            (created["book_id"], "pytest자동"),
+        )
+        rows = cur.fetchall()
+    conn.close()
+    assert rows, "정기결제가 거래를 만들지 않았다"
+    assert rows[0]["payment_method"] == "우리카드"
+    client.delete(f"/transaction/recurring/delete/{rec['id']}")
 
 
 # ──────────────────────────────────────────────────────────────────

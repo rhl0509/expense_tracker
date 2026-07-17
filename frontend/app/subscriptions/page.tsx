@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { getRecurring, addRecurring, deleteRecurring, processRecurring } from '@/lib/api';
 import { useCategories } from '@/hooks/useCategories';
-import { useUserLabels } from '@/hooks/useSettings';
+import { useUserLabels, usePaymentMethods } from '@/hooks/useSettings';
 import { useToast } from '@/components/providers/ToastProvider';
 import { fmtFull, commaInput, unComma } from '@/lib/utils';
 
@@ -13,16 +13,18 @@ export default function SubscriptionsPage() {
   const toast = useToast();
   const { parents, subs } = useCategories();
   const { labels } = useUserLabels();
+  const { methods } = usePaymentMethods();
   const { data: recurring = [] } = useQuery({ queryKey: ['recurring'], queryFn: getRecurring });
   const [showAdd, setShowAdd] = useState(false);
 
   const [form, setForm] = useState({
     user: '', type: 'expense' as 'income' | 'expense',
-    parent: '', category_id: '', repeat_day: '', amount: '', title: '',
+    parent: '', category_id: '', repeat_day: '', payment_method: '', amount: '', title: '',
   });
   const setF = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => { if (labels[0]) setForm((f) => (f.user ? f : { ...f, user: labels[0] })); }, [labels]);
+  useEffect(() => { if (methods[0]) setForm((f) => (f.payment_method ? f : { ...f, payment_method: methods[0] })); }, [methods]);
 
   const parentOpts = parents(form.type);
   const subOpts = useMemo(() => subs(form.parent), [subs, form.parent]);
@@ -34,6 +36,7 @@ export default function SubscriptionsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
       setShowAdd(false);
+      // 결제수단·사용자는 다음 등록에도 대개 같으므로 남긴다.
       setForm((f) => ({ ...f, repeat_day: '', amount: '', title: '' }));
       toast('정기 결제가 추가되었습니다.', 'success');
     },
@@ -55,7 +58,10 @@ export default function SubscriptionsPage() {
     const day = parseInt(form.repeat_day, 10);
     if (!amount || !form.title.trim() || !category_id || !form.repeat_day) return toast('모든 항목을 입력해 주세요.', 'error');
     if (day < 1 || day > 28) return toast('결제일은 1~28 사이로 입력해 주세요.', 'error');
-    addMut.mutate({ user: form.user, type: form.type, repeat_day: day, category_id: Number(category_id), amount, title: form.title.trim() });
+    addMut.mutate({
+      user: form.user, type: form.type, repeat_day: day, category_id: Number(category_id),
+      payment_method: form.payment_method, amount, title: form.title.trim(),
+    });
   }
 
   const income = recurring.filter((r) => r.type === 'income').reduce((s, r) => s + r.amount, 0);
@@ -93,7 +99,7 @@ export default function SubscriptionsPage() {
             <span className="badge" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', flexShrink: 0 }}>매월 {r.repeat_day}일</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text)' }}>{r.title}</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: 1 }}>{r.category_name ?? '미분류'} · {r.user}</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: 1 }}>{r.category_name ?? '미분류'} · {r.payment_method || '결제수단 미지정'} · {r.user}</div>
             </div>
             <div className="font-mono" style={{ fontWeight: 700, fontSize: '0.9rem', color: r.type === 'income' ? 'var(--income)' : 'var(--expense)', whiteSpace: 'nowrap' }}>{r.type === 'income' ? '+' : '-'}{fmtFull(r.amount)}</div>
             <button onClick={() => delMut.mutate(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: '0.8rem', padding: '4px 8px' }}>✕</button>
@@ -115,9 +121,10 @@ export default function SubscriptionsPage() {
                 </button>
               ))}
             </div>
+            {/* 필드 순서를 대시보드의 거래 추가 모달과 맞췄다(금액 → 내용 → 분류 → 결제수단/사용자). */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <input className="field" placeholder="내용 (예: 넷플릭스 구독)" value={form.title} onChange={(e) => setF('title', e.target.value)} />
               <input className="field" inputMode="numeric" placeholder="금액" style={{ textAlign: 'right', fontWeight: 700 }} value={form.amount} onChange={(e) => setF('amount', commaInput(e.target.value))} />
+              <input className="field" placeholder="내용 (예: 넷플릭스 구독)" value={form.title} onChange={(e) => setF('title', e.target.value)} />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <select className="field" value={form.parent} onChange={(e) => setF('parent', e.target.value)}>
                   <option value="">대분류</option>
@@ -128,16 +135,18 @@ export default function SubscriptionsPage() {
                 </select>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-3)', marginBottom: 4 }}>결제일 (1~28)</label>
-                  <input className="field" type="number" min={1} max={28} placeholder="예: 25" value={form.repeat_day} onChange={(e) => setF('repeat_day', e.target.value)} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-3)', marginBottom: 4 }}>사용자</label>
-                  <select className="field" value={form.user} onChange={(e) => setF('user', e.target.value)}>
-                    {labels.map((l) => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                </div>
+                <select className="field" aria-label="결제수단" value={form.payment_method} onChange={(e) => setF('payment_method', e.target.value)}>
+                  {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <select className="field" aria-label="사용자" value={form.user} onChange={(e) => setF('user', e.target.value)}>
+                  {labels.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+              {/* 결제일은 대시보드에 대응물이 없다(거기는 type="date" 라 자명하다).
+                  1~28 이라는 제약이 라벨에만 있으므로 라벨을 유지한다. */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-3)', marginBottom: 4 }}>결제일 (1~28)</label>
+                <input className="field" type="number" min={1} max={28} placeholder="예: 25" value={form.repeat_day} onChange={(e) => setF('repeat_day', e.target.value)} />
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>

@@ -142,6 +142,7 @@ export const addRecurring = (data: {
   type: string;
   repeat_day: number;
   user: string;
+  payment_method?: string;
   amount: number;
 }) => req<{ message: string }>('/transaction/recurring/add', { method: 'POST', body: JSON.stringify(data) });
 

@@ -269,6 +269,9 @@ async def add_recurring(request: Request, _=Depends(api_require_login)):
     title       = (data.get('title') or '').strip()
     type_val    = data.get('type')
     user_tag    = data.get('user') or '공용'
+    payment     = (data.get('payment_method') or '').strip() or None
+    if payment and len(payment) > 50:
+        return JSONResponse({"error": "결제수단이 올바르지 않습니다."}, status_code=400)
     if not title or len(title) > 200:
         return JSONResponse({"error": "제목이 올바르지 않습니다."}, status_code=400)
     if type_val not in ('income', 'expense'):
@@ -289,8 +292,8 @@ async def add_recurring(request: Request, _=Depends(api_require_login)):
             if category_id is not None and not _category_belongs_to_book(cursor, category_id, account_book_id):
                 return JSONResponse({"error": "유효하지 않은 카테고리입니다."}, status_code=400)
             cursor.execute(
-                "INSERT INTO recurring_transactions (account_book_id, category_id, title, type, repeat_day, user, amount) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (account_book_id, category_id, title, type_val, repeat_day, user_tag, amount)
+                "INSERT INTO recurring_transactions (account_book_id, category_id, title, type, repeat_day, user, payment_method, amount) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (account_book_id, category_id, title, type_val, repeat_day, user_tag, payment, amount)
             )
         conn.commit()
         return JSONResponse({"message": "success"}, status_code=201)
@@ -314,9 +317,11 @@ async def process_recurring(request: Request, _=Depends(api_require_login)):
             settings = cursor.fetchall()
             for s in settings:
                 reg_date = today.replace(day=s['repeat_day']).strftime('%Y-%m-%d')
+                # payment_method 를 같이 넣는다. 안 넣으면 매달 자동 생성되는 구독료가
+                # "어느 카드로 나갔는지" 없이 쌓여 결제수단별 통계에서 전부 빠진다.
                 cursor.execute(
-                    "INSERT INTO transactions (account_book_id, member_id, category_id, type, amount, title, memo, transaction_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    (account_book_id, user_no, s['category_id'], s['type'], s['amount'], s['title'], '정기결제 자동생성', reg_date)
+                    "INSERT INTO transactions (account_book_id, member_id, category_id, type, amount, title, memo, payment_method, transaction_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (account_book_id, user_no, s['category_id'], s['type'], s['amount'], s['title'], '정기결제 자동생성', s.get('payment_method'), reg_date)
                 )
                 cursor.execute("UPDATE recurring_transactions SET last_processed_month = %s WHERE id = %s", (current_month_str, s['id']))
         conn.commit()

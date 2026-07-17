@@ -86,6 +86,7 @@ export interface RecurringTransaction {
   type: 'income' | 'expense';
   repeat_day: number;
   user: string;
+  payment_method: string | null;
   amount: number;
   created_at: string;
   last_processed_month: string | null;
