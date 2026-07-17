@@ -17,6 +17,25 @@ _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 # E.164: '+' 뒤에 국가번호를 포함해 최대 15자리. 정규화는 프론트가 하고 여기선 형식만 강제한다.
 _PHONE_RE = re.compile(r'^\+[1-9]\d{6,14}$')
 
+# 계정 비밀번호 규칙. 카드 연동의 Gmail 앱 비밀번호(card_import.py)는 소문자 16자라
+# 이 규칙을 쓰면 안 된다 — 여기는 가입 비밀번호 전용이다.
+_PW_RULES = (
+    (re.compile(r'[a-z]'), '영문 소문자'),
+    (re.compile(r'[A-Z]'), '영문 대문자'),
+    (re.compile(r'\d'), '숫자'),
+    (re.compile(r'[^A-Za-z0-9]'), '특수문자'),
+)
+
+
+def _password_error(password: str) -> str | None:
+    """규칙 위반이면 사용자에게 보일 문구를, 통과면 None을 반환한다."""
+    if not (8 <= len(password) <= 128):
+        return "비밀번호는 8~128자여야 합니다."
+    missing = [label for rx, label in _PW_RULES if not rx.search(password)]
+    if missing:
+        return f"비밀번호에 {'·'.join(missing)}를 포함해야 합니다."
+    return None
+
 # ── 로그인 무차별 대입 방어 (아이디별 실패 횟수, 프로세스 로컬) ──
 # 프론트 프록시 뒤라 클라이언트 IP를 신뢰하기 어려워 대상 계정(user_id) 기준으로 제한한다.
 _LOGIN_MAX = 10       # 윈도우당 최대 실패 횟수
@@ -89,8 +108,9 @@ async def register(request: Request):
         return JSONResponse({"error": "모든 필드를 입력해주세요."}, status_code=400)
     if not (3 <= len(user_id) <= 50):
         return JSONResponse({"error": "아이디는 3~50자여야 합니다."}, status_code=400)
-    if not (8 <= len(password) <= 128):
-        return JSONResponse({"error": "비밀번호는 8자 이상이어야 합니다."}, status_code=400)
+    pw_error = _password_error(password)
+    if pw_error:
+        return JSONResponse({"error": pw_error}, status_code=400)
     if len(name) > 50:
         return JSONResponse({"error": "이름이 너무 깁니다."}, status_code=400)
     if len(email) > 100:  # members.email 컬럼이 varchar(100)

@@ -13,7 +13,8 @@ from starlette.testclient import TestClient
 from app import app
 from database.db_connection import get_db_connection
 
-TEST_PW = "test1234"
+# 가입 비밀번호 규칙(대소문자·숫자·특수문자 포함 8자 이상)을 만족해야 register가 201을 준다.
+TEST_PW = "Test1234!"
 
 
 @pytest.fixture(scope="module")
@@ -422,12 +423,16 @@ def test_ai_chat_validation_and_rate_limit():
 # ──────────────────────────────────────────────────────────────────
 def test_register_validation():
     c = TestClient(app)
-    base = {"user_id": "regval_" + uuid.uuid4().hex[:6], "password": "test1234", "name": "n", "email": "a@b.com"}
+    base = {"user_id": "regval_" + uuid.uuid4().hex[:6], "password": TEST_PW, "name": "n", "email": "a@b.com"}
 
     def r(**over):
         return c.post("/auth/register", json={**base, **over})
 
-    assert r(password="short").status_code == 400     # 비밀번호 8자 미만
+    assert r(password="Ab1!").status_code == 400          # 8자 미만
+    assert r(password="TEST1234!").status_code == 400     # 소문자 없음
+    assert r(password="test1234!").status_code == 400     # 대문자 없음
+    assert r(password="TestTest!").status_code == 400     # 숫자 없음
+    assert r(password="TestTest1").status_code == 400     # 특수문자 없음
     assert r(email="not-an-email").status_code == 400  # 이메일 형식 오류
     assert r(user_id="ab").status_code == 400          # 아이디 3자 미만
     assert r(phone="12345").status_code == 400              # 핸드폰: E.164 아님

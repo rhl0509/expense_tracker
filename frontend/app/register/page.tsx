@@ -12,6 +12,21 @@ import { COUNTRY_GROUPS, DEFAULT_ISO, findCountry } from '@/lib/countries';
 // 자릿수를 묶는 법이 나라마다 달라(한국 3-4-4, 미국 (201) 555-0123, 프랑스 2-2-2-2-2 …)
 // 손으로 쓰지 않고 libphonenumber에 맡긴다. 검증·E.164 변환도 같은 출처를 쓴다.
 const formatPhone = (raw: string, iso: string) => new AsYouType(iso as CountryCode).input(raw);
+
+// 백엔드 auth.py의 _PW_RULES와 같은 규칙. 둘 중 하나만 바꾸면 안 된다.
+const PW_HINT = '영문 대문자·소문자·숫자·특수문자를 포함해 8자 이상';
+const PW_RULES: [RegExp, string][] = [
+  [/[a-z]/, '영문 소문자'],
+  [/[A-Z]/, '영문 대문자'],
+  [/\d/, '숫자'],
+  [/[^A-Za-z0-9]/, '특수문자'],
+];
+
+function passwordError(pw: string): string | null {
+  if (pw.length < 8 || pw.length > 128) return '비밀번호는 8~128자여야 합니다.';
+  const missing = PW_RULES.filter(([rx]) => !rx.test(pw)).map(([, label]) => label);
+  return missing.length ? `비밀번호에 ${missing.join('·')}를 포함해야 합니다.` : null;
+}
 const EMAIL_DOMAINS = [
   'naver.com', 'gmail.com', 'daum.net', 'hanmail.net',
   'kakao.com', 'nate.com', 'outlook.com', 'icloud.com',
@@ -63,15 +78,16 @@ export default function RegisterPage() {
   };
 
   const checkPassword = () => {
-    if (form.password.length < 8 || form.password.length > 128) {
-      setNotice({ variant: 'error', title: '비밀번호를 확인해주세요', message: '비밀번호는 8~128자여야 합니다.' });
+    const err = passwordError(form.password);
+    if (err) {
+      setNotice({ variant: 'error', title: '비밀번호를 확인해주세요', message: err });
       return;
     }
     if (form.password !== form.password_confirm) {
       setNotice({ variant: 'error', title: '비밀번호가 일치하지 않습니다', message: '두 입력란에 같은 비밀번호를 입력해주세요.' });
       return;
     }
-    setNotice({ variant: 'success', title: '사용 가능한 비밀번호입니다', message: '8자 이상이고 두 입력란이 일치합니다.' });
+    setNotice({ variant: 'success', title: '사용 가능한 비밀번호입니다', message: `${PW_HINT} — 규칙을 모두 만족하고 두 입력란이 일치합니다.` });
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -79,6 +95,11 @@ export default function RegisterPage() {
     setError('');
     if (!idVerified) {
       setError('아이디 중복확인을 해주세요.');
+      return;
+    }
+    const pwError = passwordError(form.password);
+    if (pwError) {
+      setError(pwError);
       return;
     }
     if (form.password !== form.password_confirm) {
@@ -182,7 +203,10 @@ export default function RegisterPage() {
                 ✓ 사용 가능한 아이디입니다
               </p>
             )}
-            {field('password', '비밀번호', 'password', '비밀번호 (8자 이상)')}
+            {field('password', '비밀번호', 'password', '비밀번호')}
+            <p style={{ margin: '-8px 0 0', fontSize: '0.72rem', color: 'var(--text-3)' }}>
+              {PW_HINT}
+            </p>
             {field('password_confirm', '비밀번호 확인', 'password', '비밀번호 재입력', checkBtn('확인', checkPassword))}
             {field('name', '이름', 'text', '이름')}
 
