@@ -6,6 +6,7 @@ teardown에서 모두 삭제한다. 공유 자원(account_book=2의 settings)은
 """
 import os
 import uuid
+from unittest.mock import patch
 
 import pytest
 from starlette.testclient import TestClient
@@ -547,7 +548,7 @@ def test_card_credentials_crud():
     c, uid, book_id, mid = _register_login("card_")
     try:
         assert c.get("/transaction/card-credentials").json()["configured"] is False
-        # 잘못된 값은 거부
+        # 형식이 잘못된 값은 IMAP 검증 전에 거부된다(네트워크를 타지 않는다)
         assert c.post("/transaction/card-credentials",
                       json={"imap_user": "me@gmail.com", "imap_password": "short"}).status_code == 400
         assert c.post("/transaction/card-credentials",
@@ -555,10 +556,21 @@ def test_card_credentials_crud():
         assert c.post("/transaction/card-credentials",
                       json={"imap_user": "me@gmail.com", "imap_password": "abcd efgh ijkl mnop",
                             "woori_birth": "12"}).status_code == 400
+
+        ok_body = {"imap_user": "me@gmail.com", "imap_password": "abcd efgh ijkl mnop",
+                   "woori_birth": "900101"}
+        # 여기서부터는 Gmail 로그인 검증을 대역한다. 이 테스트가 보는 건 저장·암호화·
+        # 마스킹이지 실제 Gmail 연결이 아니다(가짜 주소로는 당연히 로그인이 안 된다).
+        with patch("routes.card_import.verify_imap_login",
+                   side_effect=Exception("[AUTHENTICATIONFAILED] Invalid credentials")):
+            assert c.post("/transaction/card-credentials", json=ok_body).status_code == 400
+            # 로그인이 안 되는 값은 저장까지 가면 안 된다 — "저장됨"이라 해놓고
+            # 수집이 하루 뒤에야 조용히 실패하는 게 원래 문제였다.
+            assert c.get("/transaction/card-credentials").json()["configured"] is False
+
         # 정상 저장
-        assert c.post("/transaction/card-credentials",
-                      json={"imap_user": "me@gmail.com", "imap_password": "abcd efgh ijkl mnop",
-                            "woori_birth": "900101"}).status_code == 200
+        with patch("routes.card_import.verify_imap_login", return_value=None):
+            assert c.post("/transaction/card-credentials", json=ok_body).status_code == 200
         st = c.get("/transaction/card-credentials").json()
         assert st["configured"] is True and st["has_woori"] is True
         assert "gmail.com" in st["imap_user_masked"] and st["imap_user_masked"] != "me@gmail.com"

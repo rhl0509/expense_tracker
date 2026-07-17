@@ -110,6 +110,14 @@ export default function SettingsPage() {
                 }}>취소</button>
               )}
             </div>
+
+            {/* 토스트는 사라지지만 이 문구는 남는다 — 무엇을 고쳐야 하는지 보면서
+                다시 입력할 수 있어야 한다. */}
+            {saveMut.isError && (
+              <div style={errorStyle} role="alert">
+                {(saveMut.error as Error).message || '저장에 실패했습니다.'}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -133,6 +141,11 @@ const labelStyle: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 600, 
 const rowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10,
   border: '1px solid var(--card-border)', background: 'var(--hover-bg)', padding: '8px 12px',
+};
+const errorStyle: React.CSSProperties = {
+  fontSize: '0.78rem', lineHeight: 1.6, color: 'var(--expense)', borderRadius: 10,
+  background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)',
+  padding: '8px 12px', marginTop: 4,
 };
 const noticeStyle: React.CSSProperties = {
   fontSize: '0.74rem', color: 'var(--text-3)', lineHeight: 1.6, borderRadius: 10,

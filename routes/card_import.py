@@ -41,7 +41,7 @@ from database.db_connection import get_db_connection
 from routes.utils import (
     get_user_no, get_default_book_id, api_require_login,
 )
-from card_statement import fetch_all_statements, categorize_merchant
+from card_statement import fetch_all_statements, categorize_merchant, verify_imap_login
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -142,6 +142,31 @@ async def save_card_credentials(request: Request, _=Depends(api_require_login)):
         return JSONResponse({"error": "앱 비밀번호가 올바르지 않습니다."}, status_code=400)
     if woori_birth and (len(woori_birth) != 6 or not woori_birth.isdigit()):
         return JSONResponse({"error": "우리카드 생년월일은 숫자 6자리여야 합니다."}, status_code=400)
+
+    # 저장하기 전에 실제로 로그인해본다. 형식만 검사하면 "저장됨"이라고 말해놓고
+    # 수집이 24시간 뒤 스케줄러 로그에서만 실패한다 — 사용자에겐 조용히 아무 일도
+    # 안 일어나는 걸로 보인다(실제로 계정 비밀번호가 두 번 저장된 적이 있다).
+    try:
+        await run_in_threadpool(verify_imap_login, imap_user, imap_password)
+    except Exception as exc:
+        detail = str(exc)
+        if "Application-specific password required" in detail:
+            return JSONResponse(
+                {"error": "구글 앱 비밀번호가 필요합니다. 계정 비밀번호가 아니라 "
+                          "앱 비밀번호(공백 제외 소문자 16자)를 입력하세요."},
+                status_code=400,
+            )
+        if "AUTHENTICATIONFAILED" in detail or "Invalid credentials" in detail:
+            return JSONResponse(
+                {"error": "Gmail 로그인에 실패했습니다. 주소와 앱 비밀번호를 확인하세요."},
+                status_code=400,
+            )
+        # 네트워크·Gmail 장애 등은 사용자 입력 잘못이 아니므로 400이 아니다.
+        logger.exception("자격증명 검증 중 IMAP 접속 실패")
+        return JSONResponse(
+            {"error": "Gmail에 연결하지 못했습니다. 잠시 후 다시 시도해주세요."},
+            status_code=502,
+        )
 
     pw_enc = _encrypt(imap_password)
     birth_enc = _encrypt(woori_birth) if woori_birth else None

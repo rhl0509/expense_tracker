@@ -392,6 +392,30 @@ def _fetch_source(imap, since, sender, fn_hint, parser, payment_method,
     return rows
 
 
+def verify_imap_login(imap_user: str, imap_password: str) -> None:
+    """Gmail IMAP 로그인만 확인한다. 실패하면 예외를 그대로 올린다.
+
+    자격증명을 저장하는 시점에 부르는 용도다. 형식만 맞고 실제로는 못 쓰는 값
+    (예: 앱 비밀번호가 아니라 계정 비밀번호)이 조용히 저장되면, 사용자는 "저장됨"을
+    보지만 수집은 24시간 뒤 스케줄러 로그에서만 실패한다.
+
+    ssl_context·timeout 을 명시하는 이유는 fetch_all_statements 와 같다.
+    """
+    import imaplib
+    import ssl
+
+    imap = imaplib.IMAP4_SSL(
+        "imap.gmail.com", ssl_context=ssl.create_default_context(), timeout=15,
+    )
+    try:
+        imap.login(imap_user, imap_password)
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
+
+
 def fetch_all_statements(imap_user: str, imap_password: str, days: int = 40,
                          woori_birth: str = None) -> list[dict]:
     """Gmail IMAP 로 최근 카드 명세서(현대·KB·우리) HTML 첨부를 받아 파싱한다.
