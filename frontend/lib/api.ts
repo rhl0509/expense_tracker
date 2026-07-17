@@ -30,10 +30,16 @@ export const login = (user_id: string, password: string) =>
     body: JSON.stringify({ user_id, password }),
   });
 
-export const register = (data: { user_id: string; password: string; name: string; email: string }) =>
+export const register = (data: { user_id: string; password: string; name: string; email: string; phone?: string }) =>
   req<{ message: string }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify(data),
+  });
+
+export const checkUserId = (user_id: string) =>
+  req<{ available: boolean }>('/auth/check-user-id', {
+    method: 'POST',
+    body: JSON.stringify({ user_id }),
   });
 
 export const logout = () => fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
