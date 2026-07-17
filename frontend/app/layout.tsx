@@ -7,13 +7,13 @@ import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 import { THEME_COLORS } from '@/lib/theme';
 
 export const metadata: Metadata = {
-  title: '가계부 Pro',
+  title: 'AI 가계부',
   description: 'Personal expense tracker',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: '가계부',
+    title: 'AI 가계부',
   },
   icons: {
     icon: [

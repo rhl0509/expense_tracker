@@ -188,7 +188,7 @@ export default function RegisterPage() {
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ fontSize: '2rem', marginBottom: 8 }}>✦</div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            가계부 Pro
+            AI 가계부
           </h1>
         </div>
 

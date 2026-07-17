@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: '가계부 Pro',
-    short_name: '가계부',
+    name: 'AI 가계부',
+    short_name: 'AI 가계부',
     description: 'Personal expense tracker',
     start_url: '/',
     display: 'standalone',

@@ -1,4 +1,4 @@
-# 가계부 Pro — 프론트엔드 (expense_frontend)
+# AI 가계부 — 프론트엔드 (expense_frontend)
 
 ![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black)

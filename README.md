@@ -1,4 +1,4 @@
-# 가계부 Pro — 백엔드 (FastAPI)
+# AI 가계부 — 백엔드 (FastAPI)
 
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
