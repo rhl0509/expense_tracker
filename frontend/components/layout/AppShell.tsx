@@ -36,6 +36,17 @@ const BOTTOM_TABS: NavItem[] = [
   { href: '/ai-advisor',   icon: '✦',  label: 'AI' },
 ];
 
+// 로고는 홈(기록하기) 링크다. <button>이 아니라 <Link>인 이유: 하는 일이 페이지 이동이라
+// 새 탭 열기·가운데 클릭이 되고 스크린리더가 목적지 있는 링크로 읽는다.
+const logoStyle: React.CSSProperties = {
+  display: 'inline-block',
+  fontWeight: 800,
+  fontSize: '1rem',
+  color: 'var(--text)',
+  letterSpacing: '-0.5px',
+  textDecoration: 'none',
+};
+
 const TITLES: Record<string, string> = {
   '/record': '기록하기', '/dashboard': '대시보드', '/transactions': '거래 내역',
   '/search': '검색', '/subscriptions': '정기결제', '/analytics': '분석 차트',
@@ -153,9 +164,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         className="hidden md:flex"
       >
         <div style={{ padding: '0 20px 18px', borderBottom: '1px solid var(--nav-border)' }}>
-          <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text)', letterSpacing: '-0.5px' }}>
-            <span style={{ color: 'var(--lime)' }}>✦</span> 가계부 Pro
-          </div>
+          <Link href="/record" className="logo-link" style={logoStyle} aria-label="AI 가계부 홈 — 기록하기로 이동">
+            <span style={{ color: 'var(--brand)' }}>✦</span> AI 가계부
+          </Link>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: 3 }}>{user.user_name}</div>
         </div>
 
@@ -171,7 +182,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             href="http://localhost:5001/stock_live"
             style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10,
-              fontSize: '0.82rem', fontWeight: 600, color: 'var(--lime)', textDecoration: 'none',
+              fontSize: '0.82rem', fontWeight: 600, color: 'var(--brand)', textDecoration: 'none',
               background: 'var(--accent-soft)', marginBottom: 8,
             }}
           >
@@ -220,7 +231,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           }}
           className="hidden md:flex"
         >
-          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text)' }}>{TITLES[pathname] ?? '가계부 Pro'}</span>
+          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text)' }}>{TITLES[pathname] ?? 'AI 가계부'}</span>
         </header>
 
         {/* Mobile header */}
@@ -232,9 +243,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           }}
           className="flex md:hidden"
         >
-          <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text)' }}>
-            <span style={{ color: 'var(--lime)' }}>✦</span> 가계부 Pro
-          </div>
+          <Link href="/record" className="logo-link" style={{ ...logoStyle, fontSize: '0.9rem' }} aria-label="AI 가계부 홈 — 기록하기로 이동">
+            <span style={{ color: 'var(--brand)' }}>✦</span> AI 가계부
+          </Link>
           <ThemeToggle />
         </header>
 
