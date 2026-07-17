@@ -49,7 +49,7 @@ export default function CategoriesPage() {
       <h1 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>카테고리 · 설정</h1>
 
       {/* 사용자 라벨 / 결제수단 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14, marginBottom: 14 }} className="md:grid-cols-2">
+      <div style={{ display: 'grid', gap: 14, marginBottom: 14 }} className="grid-cols-1 md:grid-cols-2">
         <ListEditor
           title="사용자 라벨"
           items={labelsApi.labels}
@@ -79,7 +79,7 @@ export default function CategoriesPage() {
           <button className="btn btn-primary" onClick={addParent}>+ 대분류 추가</button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24 }} className="md:grid-cols-2">
+        <div style={{ display: 'grid', gap: 24 }} className="grid-cols-1 md:grid-cols-2">
           <CategoryColumn title="수입 카테고리" color="var(--income)" type="income" groups={grouped('income')} onAddSub={setSubFor} onDelete={setDelTarget} onMove={moveParent} />
           <CategoryColumn title="지출 카테고리" color="var(--expense)" type="expense" groups={grouped('expense')} onAddSub={setSubFor} onDelete={setDelTarget} onMove={moveParent} />
         </div>

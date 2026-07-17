@@ -89,7 +89,7 @@ export default function SearchPage() {
           ))}
         </div>
         <input className="field" placeholder="내용·카테고리·금액 검색" value={query} onChange={(e) => setQuery(e.target.value)} style={{ marginBottom: 10 }} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }} className="md:grid-cols-4">
+        <div style={{ display: 'grid', gap: 10 }} className="grid-cols-2 md:grid-cols-4">
           <select className="field" value={type} onChange={(e) => setType(e.target.value)}>
             <option value="">전체 유형</option><option value="income">수입</option><option value="expense">지출</option>
           </select>

@@ -71,7 +71,7 @@ export default function BudgetPage() {
       {cats.length === 0 ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', fontSize: '0.85rem' }}>이번달 지출 데이터가 없습니다.</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }} className="md:grid-cols-2 lg:grid-cols-3">
+        <div style={{ display: 'grid', gap: 12 }} className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {cats.map((cat) => {
             const sp = spent[cat] || 0;
             const bg = +budgets[cat] || 200000;

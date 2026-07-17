@@ -148,7 +148,7 @@ export default function RecordPage() {
       <div className="card" style={{ padding: 20 }}>
         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>결제수단별 지출</div>
         {paySummary.length ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }} className="md:grid-cols-4">
+          <div style={{ display: 'grid', gap: 10 }} className="grid-cols-2 md:grid-cols-4">
             {paySummary.map((p) => (
               <div key={p.payment_method || '기타'} style={{ borderRadius: 12, border: '1px solid var(--card-border)', background: 'var(--hover-bg)', padding: '12px 14px', textAlign: 'center' }}>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginBottom: 4 }}>{p.payment_method || '기타'}</div>
@@ -162,7 +162,7 @@ export default function RecordPage() {
       {/* 새 내역 기록 */}
       <div className="card" style={{ padding: 20 }}>
         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>✎ 새 내역 기록</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }} className="md:grid-cols-3">
+        <div style={{ display: 'grid', gap: 12 }} className="grid-cols-2 md:grid-cols-3">
           <Field label="사용자">
             <Segmented
               ariaLabel="사용자"

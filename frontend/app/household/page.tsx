@@ -63,7 +63,7 @@ export default function HouseholdPage() {
     <>
       <h1 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>가구 관리</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }} className="md:grid-cols-2">
+      <div style={{ display: 'grid', gap: 14 }} className="grid-cols-1 md:grid-cols-2">
         {/* 내 가구 목록 + 전환 */}
         <div className="card" style={{ padding: 18 }}>
           <div style={sectionTitle}>내 가구</div>
