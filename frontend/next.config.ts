@@ -5,7 +5,9 @@ const BACKEND = process.env.BACKEND_URL || "http://127.0.0.1:5000";
 const nextConfig: NextConfig = {
   allowedDevOrigins: [
     "127.0.0.1",
-    "112.158.254.192",
+    // DHCP로 마지막 옥텟이 바뀌어도 안 깨지게 대역으로 둔다.
+    // (Next의 matchWildcardDomain은 점 단위 우측부터 매칭하고 *는 한 세그먼트를 먹는다.)
+    "112.158.254.*",
     "100.125.255.53",
     "desktop-7du8ple.tail641172.ts.net",
   ],
