@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/providers/ToastProvider';
 import ConfirmModal from '@/components/ConfirmModal';
 import { logout, resetData } from '@/lib/api';
+import { THEME_COLORS } from '@/lib/theme';
 
 interface NavItem { href: string; icon: string; label: string; }
 
@@ -45,13 +46,15 @@ const TITLES: Record<string, string> = {
 function ThemeToggle() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   useEffect(() => {
-    setTheme((localStorage.getItem('theme') ?? 'dark') as 'dark' | 'light');
+    // FOUC 스크립트가 저장값/기기설정을 반영해 이미 확정한 결과를 그대로 읽는다.
+    setTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
   }, []);
   const toggle = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     localStorage.setItem('theme', next);
     document.documentElement.setAttribute('data-theme', next);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLORS[next]);
   };
   return (
     <button
