@@ -1,7 +1,7 @@
 """
 routes/card_import.py — 사용자별 Gmail IMAP 카드 명세서 자동 수집 → 가계부 추가.
 
-각 멤버가 '내 정보'에서 자신의 Gmail 앱 비밀번호(+우리카드 생년월일)를 저장하면
+각 멤버가 '마이페이지'에서 자신의 Gmail 앱 비밀번호(+우리카드 생년월일)를 저장하면
 (member_email_credentials, Fernet 암호화) 본인 계정으로만 메일을 파싱한다.
 공용 계정을 모든 사용자가 공유하던 구조를 없애 테넌트 간 유출 위험을 제거했다.
 
@@ -219,13 +219,13 @@ async def import_card_statement(request: Request, days: int = 40, _=Depends(api_
     cred = _load_credentials(user_no)
     if not cred:
         return JSONResponse(
-            {"error": "카드 연동이 설정되지 않았습니다. 내 정보에서 Gmail 앱 비밀번호를 저장하세요."},
+            {"error": "카드 연동이 설정되지 않았습니다. 마이페이지에서 Gmail 앱 비밀번호를 저장하세요."},
             status_code=400,
         )
     imap_password = _decrypt(cred["imap_password_enc"])
     if imap_password is None:
         return JSONResponse(
-            {"error": "저장된 자격증명을 복호화할 수 없습니다. 내 정보에서 다시 저장해주세요."},
+            {"error": "저장된 자격증명을 복호화할 수 없습니다. 마이페이지에서 다시 저장해주세요."},
             status_code=400,
         )
     woori_birth = _decrypt(cred["woori_birth_enc"]) if cred["woori_birth_enc"] else None

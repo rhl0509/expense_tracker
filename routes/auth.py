@@ -4,11 +4,11 @@ import time
 from collections import defaultdict
 from threading import Lock
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from werkzeug.security import generate_password_hash, check_password_hash
 from database.db_connection import get_db_connection
-from routes.utils import get_default_book_id
+from routes.utils import api_require_login, get_default_book_id, get_user_no
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -230,6 +230,69 @@ async def login(request: Request):
 async def logout(request: Request):
     request.session.clear()
     return {"message": "로그아웃되었습니다."}
+
+
+@router.get('/profile')
+async def profile(request: Request, _=Depends(api_require_login)):
+    """마이페이지용 계정 정보. /me 와 달리 DB 에서 읽는다.
+
+    /me 는 세션만 읽는 인증 가드용이고 화면 이동마다 호출된다 — 거기에 DB 조회를
+    붙이면 이메일·핸드폰 때문에 모든 페이지가 쿼리를 한 번씩 더 낸다.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT user_id, name, email, phone FROM members WHERE id = %s",
+                (get_user_no(request),),
+            )
+            row = cursor.fetchone()
+        if not row:
+            return JSONResponse({"error": "사용자를 찾을 수 없습니다."}, status_code=404)
+        return row
+    finally:
+        conn.close()
+
+
+@router.post('/change-password')
+async def change_password(request: Request, _=Depends(api_require_login)):
+    """현재 비밀번호를 확인한 뒤 새 비밀번호로 바꾼다.
+
+    세션은 유지한다. 비밀번호를 바꿨다고 로그아웃시키면 사용자는 방금 정한 것을
+    다시 입력해야 한다 — 세션 쿠키는 서명 기반이라 해시가 바뀌어도 유효하다.
+    """
+    data = await request.json()
+    current = data.get('current_password') or ''
+    new_pw = data.get('new_password') or ''
+
+    user_no = get_user_no(request)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT password_hash FROM members WHERE id = %s", (user_no,))
+            row = cursor.fetchone()
+            if not row:
+                return JSONResponse({"error": "사용자를 찾을 수 없습니다."}, status_code=404)
+            # 현재 비밀번호를 먼저 확인한다. 세션만으로 바꾸게 두면 자리를 비운 사이
+            # 남이 계정을 통째로 가져간다.
+            if not check_password_hash(row['password_hash'], current):
+                return JSONResponse({"error": "현재 비밀번호가 일치하지 않습니다."}, status_code=400)
+
+            # 가입과 같은 규칙을 쓴다 — 여기만 느슨하면 가입 규칙이 무의미해진다.
+            pw_error = _password_error(new_pw)
+            if pw_error:
+                return JSONResponse({"error": pw_error}, status_code=400)
+            if new_pw == current:
+                return JSONResponse({"error": "현재 비밀번호와 다른 비밀번호를 입력하세요."}, status_code=400)
+
+            cursor.execute(
+                "UPDATE members SET password_hash = %s WHERE id = %s",
+                (generate_password_hash(new_pw), user_no),
+            )
+        conn.commit()
+        return {"message": "비밀번호가 변경되었습니다."}
+    finally:
+        conn.close()
 
 
 @router.get('/me')

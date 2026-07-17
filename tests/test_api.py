@@ -548,6 +548,59 @@ def test_register_phone_is_optional():
         _cleanup_user_id(uid_without)
 
 
+def test_profile():
+    uid = "prof_" + uuid.uuid4().hex[:6]
+    c = TestClient(app)
+    try:
+        assert TestClient(app).get("/auth/profile").status_code == 401   # 비로그인
+        c.post("/auth/register", json={
+            "user_id": uid, "password": TEST_PW, "name": "프로필",
+            "email": f"{uid}@test.com", "phone": "+821012345678",
+        })
+        c.post("/auth/login", json={"user_id": uid, "password": TEST_PW})
+
+        p = c.get("/auth/profile").json()
+        assert p["user_id"] == uid
+        assert p["email"] == f"{uid}@test.com"
+        assert p["phone"] == "+821012345678"
+        # SELECT 를 넓히다 해시를 흘리기 쉽다. 못박아 둔다.
+        assert "password_hash" not in p
+    finally:
+        _cleanup_user_id(uid)
+
+
+def test_change_password():
+    c, uid, book_id, mid = _register_login("chpw_")
+    new_pw = "Newpass1!"
+    try:
+        def ch(cur, new):
+            return c.post("/auth/change-password", json={"current_password": cur, "new_password": new})
+
+        # 세션만으로는 못 바꾼다 — 자리를 비운 사이 남이 계정을 가져가면 안 된다
+        assert ch("Wrong1234!", new_pw).status_code == 400
+        # 새 비밀번호는 가입과 같은 규칙을 받는다(여기만 느슨하면 가입 규칙이 무의미)
+        assert ch(TEST_PW, "short").status_code == 400
+        assert ch(TEST_PW, "testtest1!").status_code == 400   # 대문자 없음
+        assert ch(TEST_PW, "TestTest1").status_code == 400    # 특수문자 없음
+        assert ch(TEST_PW, TEST_PW).status_code == 400        # 현재와 동일
+
+        assert ch(TEST_PW, new_pw).status_code == 200
+        # 세션은 유지된다 — 방금 정한 걸 또 입력하게 만들지 않는다
+        assert c.get("/auth/me").status_code == 200
+
+        fresh = TestClient(app)
+        assert fresh.post("/auth/login", json={"user_id": uid, "password": TEST_PW}).status_code == 401
+        assert fresh.post("/auth/login", json={"user_id": uid, "password": new_pw}).status_code == 200
+    finally:
+        _cleanup(book_id, mid)
+
+
+def test_change_password_requires_login():
+    anon = TestClient(app)
+    r = anon.post("/auth/change-password", json={"current_password": "a", "new_password": "Newpass1!"})
+    assert r.status_code == 401
+
+
 def test_check_user_id():
     _, uid, book_id, member_id = _register_login("chk_")
     try:

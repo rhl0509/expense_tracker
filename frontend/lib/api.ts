@@ -44,6 +44,16 @@ export const checkUserId = (user_id: string) =>
 
 export const logout = () => fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
 
+// 마이페이지 전용. /me 는 세션만 읽는 인증 가드라 이메일·핸드폰이 없다.
+export const getProfile = () =>
+  req<{ user_id: string; name: string; email: string; phone: string | null }>('/auth/profile');
+
+export const changePassword = (current_password: string, new_password: string) =>
+  req<{ message: string }>('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password, new_password }),
+  });
+
 // ── 가구(account_book) 멤버십 / 초대 ────────────────────────────────────
 export const getBooks = () =>
   req<{ active_book_id: number | null; books: Book[] }>('/auth/books');

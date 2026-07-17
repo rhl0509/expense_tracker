@@ -8,7 +8,7 @@ import {
 import { useToast } from '@/components/providers/ToastProvider';
 import ConfirmModal from '@/components/ConfirmModal';
 
-export default function SettingsPage() {
+export default function CardCredentials() {
   const qc = useQueryClient();
   const toast = useToast();
 
@@ -45,8 +45,6 @@ export default function SettingsPage() {
 
   return (
     <>
-      <h1 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>내 정보</h1>
-
       <div className="card" style={{ padding: 18 }}>
         <div style={sectionTitle}>카드 명세서 자동 수집</div>
         <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginBottom: 14, lineHeight: 1.6 }}>
