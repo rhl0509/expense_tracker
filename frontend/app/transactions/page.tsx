@@ -17,6 +17,27 @@ function dateRange(days: number) {
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
+const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+/** 'YYYY-MM' → 그 달 1일~말일. new Date(y, m, 0)은 m이 1-based일 때 이번 달 말일이다. */
+function monthRange(month: string) {
+  const [y, m] = month.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` };
+}
+
+/** 기준 월 앞뒤 3개월씩, 총 7개. */
+function monthChips(anchor: string) {
+  const [y, m] = anchor.split('-').map(Number);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(y, m - 1 + (i - 3), 1);
+    // 해가 다른 달은 연도를 붙인다 — 안 그러면 12월 옆의 '1월'이 언제인지 모른다.
+    const label = d.getFullYear() === y ? `${d.getMonth() + 1}월`
+      : `${String(d.getFullYear()).slice(2)}.${d.getMonth() + 1}월`;
+    return { month: ym(d), label };
+  });
+}
+
 export default function TransactionsPage() {
   const qc = useQueryClient();
   const { data: transactions = [], isLoading } = useQuery({ queryKey: ['transactions'], queryFn: getTransactions });
@@ -27,8 +48,10 @@ export default function TransactionsPage() {
   const [payment, setPayment] = useState('');
   const [activeType, setActiveType] = useState('all');
   const [activeDays, setActiveDays] = useState(30);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // 기간은 "최근 N일" 아니면 "특정 월" 둘 중 하나다. 어느 쪽이 켜져 있는지를 들고 있는다.
+  const [rangeMode, setRangeMode] = useState<'days' | 'month'>('days');
+  // 달력이 고른 달이자 월 버튼 줄의 기준. 월 버튼을 누르면 기준이 그 달로 옮겨간다.
+  const [anchorMonth, setAnchorMonth] = useState(() => ym(new Date()));
   const [sortField, setSortField] = useState<'date' | 'amount' | 'type'>('date');
   const [sortDir, setSortDir] = useState(-1);
   const [page, setPage] = useState(1);
@@ -58,8 +81,7 @@ export default function TransactionsPage() {
   const categories = useMemo(() => [...new Set(rows.map((t) => t.cat).filter(Boolean))].sort(), [rows]);
 
   const filtered = useMemo(() => {
-    let f = dateFrom, t = dateTo;
-    if (!f || !t) { const r = dateRange(activeDays); f = r.from; t = r.to; }
+    const { from: f, to: t } = rangeMode === 'month' ? monthRange(anchorMonth) : dateRange(activeDays);
     const q = query.toLowerCase();
     const out = rows.filter((tx) => {
       if (tx.date < f || tx.date > t) return false;
@@ -75,9 +97,20 @@ export default function TransactionsPage() {
       return sortDir * a.type.localeCompare(b.type);
     });
     return out;
-  }, [rows, dateFrom, dateTo, activeDays, query, activeType, cat, payment, sortField, sortDir]);
+  }, [rows, rangeMode, anchorMonth, activeDays, query, activeType, cat, payment, sortField, sortDir]);
 
-  useEffect(() => setPage(1), [filtered.length, query, cat, payment, activeType, activeDays, pageSize]);
+  // 필터가 바뀌면 1페이지로 되돌린다. effect 가 아니라 렌더 중에 조정한다 —
+  // effect 는 화면이 그려진 "뒤"에 돌기 때문에, 5페이지를 보다가 3건짜리 달로 옮기면
+  // 빈 목록이 한 프레임 그려진 다음에야 1페이지로 고쳐진다.
+  // (React 공식 "값이 바뀔 때 state 조정" 패턴. setState 를 렌더 중에 부르면 React 가
+  //  커밋 없이 즉시 다시 렌더하므로 잘못된 화면이 나가지 않는다.)
+  // pageSize 는 일부러 뺐다 — 창 크기를 바꿀 때마다 1페이지로 튕기면 안 된다.
+  const filterKey = [query, cat, payment, activeType, activeDays, rangeMode, anchorMonth].join('|');
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
 
   // 화면 높이에 맞춰 한 페이지 행 수를 자동 계산(항상 목록이 뷰포트를 꽉 채우도록).
   useEffect(() => {
@@ -103,7 +136,10 @@ export default function TransactionsPage() {
   }, [filtered]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const offset = (page - 1) * pageSize;
+  // 필터를 안 바꿔도 페이지가 넘칠 수 있다(거래를 지웠거나, 창이 커져 pageSize 가 늘었을 때).
+  // 렌더 중에 잘라서 어떤 경우에도 빈 목록이 그려지지 않게 한다.
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * pageSize;
   const pageRows = filtered.slice(offset, offset + pageSize);
 
   function sortBy(field: 'date' | 'amount' | 'type') {
@@ -142,7 +178,7 @@ export default function TransactionsPage() {
       )}
 
       {/* 요약 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }} className="md:grid-cols-4">
+      <div style={{ display: 'grid', gap: 10, marginBottom: 14 }} className="grid-cols-2 md:grid-cols-4">
         <Sum label="잔액" value={(totals.net >= 0 ? '+' : '-') + fmtFull(totals.net)} color={totals.net >= 0 ? 'var(--income)' : 'var(--expense)'} />
         <Sum label="수입" value={'+' + fmtFull(totals.income)} color="var(--income)" />
         <Sum label="지출" value={'-' + fmtFull(totals.expense)} color="var(--expense)" />
@@ -162,16 +198,42 @@ export default function TransactionsPage() {
             {methods.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
+        {/* 유형 + 기준 월. 달력은 오른쪽 끝에 띄우지 않는다 — 띄우면 무엇의 기준인지
+            안 보이고, 자기가 기준이 되는 아래 월 버튼 줄과도 멀어진다. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 10 }}>
           {TYPE_CHIPS.map((c) => (
             <Chip key={c.type} active={activeType === c.type} onClick={() => setActiveType(c.type)}>{c.label}</Chip>
           ))}
-          <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--card-border)', margin: '0 4px' }} />
+          <input
+            type="month"
+            className="field"
+            style={{ width: 'auto' }}
+            aria-label="기준 월"
+            value={anchorMonth}
+            onChange={(e) => { if (e.target.value) { setAnchorMonth(e.target.value); setRangeMode('month'); } }}
+          />
+        </div>
+
+        {/* 최근 N일 */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 8 }}>
           {DAY_CHIPS.map((c) => (
-            <Chip key={c.days} active={!dateFrom && activeDays === c.days} onClick={() => { setActiveDays(c.days); setDateFrom(''); setDateTo(''); }}>{c.label}</Chip>
+            <Chip
+              key={c.days}
+              active={rangeMode === 'days' && activeDays === c.days}
+              onClick={() => { setActiveDays(c.days); setRangeMode('days'); }}
+            >{c.label}</Chip>
           ))}
-          <input type="date" className="field" style={{ width: 'auto' }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <input type="date" className="field" style={{ width: 'auto' }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        </div>
+
+        {/* 기준 월 앞뒤 3개월씩. 누르면 그 달이 새 기준이 되어 줄이 다시 그려진다. */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 8 }}>
+          {monthChips(anchorMonth).map((c) => (
+            <Chip
+              key={c.month}
+              active={rangeMode === 'month' && c.month === anchorMonth}
+              onClick={() => { setAnchorMonth(c.month); setRangeMode('month'); }}
+            >{c.label}</Chip>
+          ))}
         </div>
       </div>
 
@@ -242,11 +304,13 @@ export default function TransactionsPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid var(--card-border)' }}>
           <small style={{ color: 'var(--text-3)' }}>{filtered.length ? `${filtered.length}건 중 ${offset + 1}–${Math.min(offset + pageSize, filtered.length)}` : '0건'}</small>
           <div style={{ display: 'flex', gap: 4 }}>
-            <PageBtn label="‹" disabled={page === 1} onClick={() => setPage((p) => p - 1)} />
-            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 3), Math.max(0, page - 3) + 5).map((i) => (
-              <PageBtn key={i} label={String(i)} active={i === page} onClick={() => setPage(i)} />
+            {/* 목록과 같은 safePage 를 쓴다 — page 를 그대로 쓰면 목록은 1페이지인데
+                버튼은 5페이지가 눌린 것처럼 보인다. */}
+            <PageBtn label="‹" disabled={safePage === 1} onClick={() => setPage(safePage - 1)} />
+            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, safePage - 3), Math.max(0, safePage - 3) + 5).map((i) => (
+              <PageBtn key={i} label={String(i)} active={i === safePage} onClick={() => setPage(i)} />
             ))}
-            <PageBtn label="›" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} />
+            <PageBtn label="›" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} />
           </div>
         </div>
       </div>
