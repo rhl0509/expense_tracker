@@ -7,7 +7,7 @@ import {
   Chart as ChartJS, ArcElement, Tooltip, Legend,
   CategoryScale, LinearScale, BarElement,
 } from 'chart.js';
-import { getMonthlySummary, getCategoryChart, getRecent } from '@/lib/api';
+import { getMonthlySummary, getCategoryChart, getRecent, getYearlySummary } from '@/lib/api';
 import { fmt, categoryColor } from '@/lib/utils';
 import AddTransactionModal from '@/components/AddTransactionModal';
 import type { MonthlySummary, CategoryChart, Transaction } from '@/lib/types';
@@ -33,6 +33,9 @@ export default function DashboardPage() {
   const { data: monthly = [] } = useQuery({ queryKey: ['monthly-summary', year], queryFn: () => getMonthlySummary(year) });
   const { data: catChart = [] } = useQuery({ queryKey: ['category-chart'], queryFn: () => getCategoryChart() });
   const { data: recent = [] } = useQuery({ queryKey: ['recent', 8], queryFn: () => getRecent(8) });
+  // 기록하기에서 옮겨온 값. 여기서 monthly 로 직접 합치지 않는다 — 이 페이지의 sum()은
+  // 저축·투자를 빼지만(EXCLUDE) yearly-summary 는 전액을 합쳐서 의미가 다르다.
+  const { data: yearly } = useQuery({ queryKey: ['yearly-summary'], queryFn: getYearlySummary });
 
   const m = new Date().getMonth() + 1;
   const prev = m === 1 ? 12 : m - 1;
@@ -107,6 +110,12 @@ export default function DashboardPage() {
           <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-3)', marginTop: 2 }}>{new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })} 현황</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ 거래 추가</button>
+      </div>
+
+      {/* 연간 (기록하기에서 옮겨옴) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, marginBottom: 14 }}>
+        <KpiCard label="올해 수입" value={yearly?.income ?? 0} color="var(--income)" />
+        <KpiCard label="올해 지출" value={yearly?.expense ?? 0} color="var(--expense)" />
       </div>
 
       {/* KPI */}

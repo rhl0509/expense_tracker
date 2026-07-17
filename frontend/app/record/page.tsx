@@ -2,15 +2,11 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  getSummary, getYearlySummary, getTransactions, getPaymentSummary,
-  addTransaction, deleteTransaction, exportCsv,
-} from '@/lib/api';
+import { getSummary, getPaymentSummary, addTransaction } from '@/lib/api';
 import { useCategories } from '@/hooks/useCategories';
 import { useUserLabels, usePaymentMethods } from '@/hooks/useSettings';
 import { useToast } from '@/components/providers/ToastProvider';
 import { fmt, fmtFull, commaInput, unComma, todayStr } from '@/lib/utils';
-import type { Transaction } from '@/lib/types';
 
 type FormState = {
   user: string;
@@ -22,6 +18,40 @@ type FormState = {
   title: string;
   amount: string;
 };
+
+type SegOption = { value: string; label: string; tone?: 'expense' | 'income' };
+
+// on/off 버튼 묶음. role="radio"가 아니라 aria-pressed를 쓴다 — 라디오그룹은
+// 화살표 키로 이동하는 규약이 따라붙는데, 그걸 구현하지 않고 role만 붙이면
+// 스크린리더 사용자에게 없는 동작을 약속하는 셈이 된다. 실제 동작은 토글 버튼이다.
+function Segmented({ options, value, onChange, ariaLabel, wrap, empty }: {
+  options: SegOption[];
+  value: string;
+  onChange: (v: string) => void;
+  ariaLabel: string;
+  wrap?: boolean;   // 항목이 많으면 균등분할 대신 내용 폭으로
+  empty?: string;   // 고를 게 없을 때 보여줄 문구
+}) {
+  if (!options.length && empty) return <div className="seg-empty">{empty}</div>;
+  return (
+    <div className={`segmented${wrap ? ' is-wrap' : ''}`} role="group" aria-label={ariaLabel}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            className={`seg-btn${on ? ' is-on' : ''}${on && o.tone ? ` seg-${o.tone}` : ''}`}
+            onClick={() => onChange(o.value)}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -40,8 +70,6 @@ export default function RecordPage() {
   const { methods } = usePaymentMethods();
 
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: getSummary });
-  const { data: yearly } = useQuery({ queryKey: ['yearly-summary'], queryFn: getYearlySummary });
-  const { data: transactions = [] } = useQuery({ queryKey: ['transactions'], queryFn: getTransactions });
   const { data: paySummary = [] } = useQuery({ queryKey: ['payment-summary'], queryFn: () => getPaymentSummary() });
 
   const [form, setForm] = useState<FormState>({
@@ -76,15 +104,6 @@ export default function RecordPage() {
     onError: (e) => toast('저장 실패: ' + (e as Error).message, 'error'),
   });
 
-  const delMut = useMutation({
-    mutationFn: deleteTransaction,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['summary'] });
-      qc.invalidateQueries({ queryKey: ['payment-summary'] });
-    },
-  });
-
   function submit() {
     const amount = unComma(form.amount);
     const category_id = form.category_id || form.parent;
@@ -104,24 +123,13 @@ export default function RecordPage() {
   const pct = income > 0 ? Math.min((expense / income) * 100, 100) : 0;
   const pctCls = pct >= 90 ? 'prog-danger' : pct >= 70 ? 'prog-warn' : 'prog-safe';
 
-  async function handleExport() {
-    const res = await exportCsv();
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'my_account_book.csv'; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const recent = (transactions as Transaction[]).slice(0, 8);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>기록하기</h1>
 
-      {/* 스탯 카드 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }} className="md:grid-cols-4">
-        <Stat label="📈 올해 수입" value={yearly?.income ?? 0} color="var(--income)" />
-        <Stat label="📉 올해 지출" value={yearly?.expense ?? 0} color="var(--expense)" />
+      {/* 스탯 카드 — 올해 수입/지출은 대시보드로 옮겼다 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
         <Stat label="💰 이번 달 수입" value={income} color="var(--income)" />
         <Stat label="💸 이번 달 지출" value={expense} color="var(--expense)" />
       </div>
@@ -156,30 +164,53 @@ export default function RecordPage() {
         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>✎ 새 내역 기록</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }} className="md:grid-cols-3">
           <Field label="사용자">
-            <select className="field" value={form.user} onChange={(e) => setF('user', e.target.value)}>
-              {labels.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
+            <Segmented
+              ariaLabel="사용자"
+              value={form.user}
+              onChange={(v) => setF('user', v)}
+              options={labels.map((l) => ({ value: l, label: l }))}
+            />
           </Field>
           <Field label="날짜">
             <input className="field" type="date" value={form.date} onChange={(e) => setF('date', e.target.value)} />
           </Field>
           <Field label="유형">
-            <select className="field" value={form.type} onChange={(e) => setF('type', e.target.value)}>
-              <option value="expense">지출</option>
-              <option value="income">수입</option>
-            </select>
+            <Segmented
+              ariaLabel="유형"
+              value={form.type}
+              onChange={(v) => setF('type', v)}
+              options={[
+                { value: 'expense', label: '지출', tone: 'expense' },
+                { value: 'income', label: '수입', tone: 'income' },
+              ]}
+            />
           </Field>
-          <Field label="대분류">
-            <select className="field" value={form.parent} onChange={(e) => setF('parent', e.target.value)}>
-              <option value="">대분류 선택</option>
-              {parentOpts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </Field>
-          <Field label="소분류">
-            <select className="field" value={form.category_id} onChange={(e) => setF('category_id', e.target.value)}>
-              {subOpts.length ? subOpts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>) : <option value="">소분류 없음</option>}
-            </select>
-          </Field>
+          {/* 지출이면 대분류가 10개라 한 칸에 넣으면 잘게 접힌다. 2열/3열 어느 쪽이든
+              전체 폭을 쓰게 '1 / -1'로 편다. */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Field label="대분류">
+              <Segmented
+                ariaLabel="대분류"
+                wrap
+                value={form.parent}
+                onChange={(v) => setF('parent', v)}
+                options={parentOpts.map((p) => ({ value: String(p.id), label: p.name }))}
+                empty="이 유형에 대분류가 없습니다"
+              />
+            </Field>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Field label="소분류">
+              <Segmented
+                ariaLabel="소분류"
+                wrap
+                value={form.category_id}
+                onChange={(v) => setF('category_id', v)}
+                options={subOpts.map((s) => ({ value: String(s.id), label: s.name }))}
+                empty={form.parent ? '소분류 없음' : '대분류를 먼저 고르세요'}
+              />
+            </Field>
+          </div>
           <Field label="결제수단">
             <select className="field" value={form.payment_method} onChange={(e) => setF('payment_method', e.target.value)}>
               {methods.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -204,32 +235,6 @@ export default function RecordPage() {
         </button>
       </div>
 
-      {/* 최근 거래 */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid var(--card-border)' }}>
-          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>최근 거래 내역</div>
-          <button className="btn btn-ghost btn-sm" onClick={handleExport}>↓ CSV</button>
-        </div>
-        {recent.length === 0 ? (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: '0.85rem' }}>등록된 거래 내역이 없습니다.</div>
-        ) : recent.map((t) => (
-          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--card-border)' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.type === 'income' ? 'rgba(16,185,129,0.1)' : 'rgba(244,63,94,0.1)', fontSize: '0.85rem', flexShrink: 0 }}>
-              {t.type === 'income' ? '↑' : '↓'}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {t.title} <span style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginLeft: 4 }}>{t.user || '공용'}</span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: 1 }}>{t.category_name ?? '미분류'} · {t.payment_method || '-'} · {t.transaction_date}</div>
-            </div>
-            <div className="font-mono" style={{ fontWeight: 700, fontSize: '0.88rem', color: t.type === 'income' ? 'var(--income)' : 'var(--expense)', whiteSpace: 'nowrap' }}>
-              {t.type === 'income' ? '+' : '-'}{fmtFull(t.amount)}
-            </div>
-            <button onClick={() => delMut.mutate(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: '0.8rem', padding: '4px 8px' }}>✕</button>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
