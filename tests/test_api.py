@@ -246,6 +246,33 @@ def _cleanup(book_id, member_id):
         conn.close()
 
 
+def _cleanup_user_id(user_id):
+    """user_id로 만들어진 유저와 그 전용 가구를 정리한다(없으면 무시)."""
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM members WHERE user_id = %s", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return
+        member_id = row["id"]
+        cur.execute("SELECT id FROM account_books WHERE member_id = %s", (member_id,))
+        book_ids = [b["id"] for b in cur.fetchall()]
+    conn.close()
+    # 가구가 없어도 member는 지워야 하므로 매칭되지 않는 id로 한 번은 돈다.
+    for book_id in book_ids or [0]:
+        _cleanup(book_id, member_id)
+
+
+def _phone_of(user_id):
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("SELECT phone FROM members WHERE user_id = %s", (user_id,))
+        row = cur.fetchone()
+    conn.close()
+    return row["phone"]
+
+
 def _expense_cat(c):
     cats = c.get("/transaction/categories").json()
     return next(x["id"] for x in cats if x["type"] == "expense")
@@ -403,6 +430,83 @@ def test_register_validation():
     assert r(password="short").status_code == 400     # 비밀번호 8자 미만
     assert r(email="not-an-email").status_code == 400  # 이메일 형식 오류
     assert r(user_id="ab").status_code == 400          # 아이디 3자 미만
+    assert r(phone="12345").status_code == 400              # 핸드폰: E.164 아님
+    assert r(phone="010-1234-5678").status_code == 400      # 국내 표기는 프론트가 E.164로 정규화해 보낸다
+    assert r(phone="+8210123456789012").status_code == 400  # E.164 최대 15자리 초과
+    # 컬럼이 varchar(100)이라 초과분은 DB 오류(500)가 아니라 400이어야 한다.
+    assert r(email="a" * 95 + "@b.com").status_code == 400
+
+
+def test_register_rejects_duplicates():
+    """아이디·이메일 중복은 각각 409로 구분되어야 한다(둘 다 UNIQUE 제약이 있음)."""
+    _, uid, book_id, member_id = _register_login("dup_")
+    try:
+        fresh = TestClient(app)
+
+        def reg(**over):
+            body = {
+                "user_id": "other_" + uuid.uuid4().hex[:6],
+                "password": TEST_PW,
+                "name": "중복검사",
+                "email": f"fresh{uuid.uuid4().hex[:6]}@test.com",
+            }
+            return fresh.post("/auth/register", json={**body, **over})
+
+        r = reg(email=f"{uid}@test.com")
+        assert r.status_code == 409, r.text
+        assert "이메일" in r.json()["error"]
+
+        r = reg(user_id=uid)
+        assert r.status_code == 409, r.text
+        assert "아이디" in r.json()["error"]
+
+        # 콜레이션이 대소문자를 무시하므로 변형 입력도 409여야 한다(500으로 새면 회귀).
+        r = reg(email=f"{uid.upper()}@TEST.COM")
+        assert r.status_code == 409, r.text
+        assert "이메일" in r.json()["error"]
+
+        r = reg(user_id=uid.upper())
+        assert r.status_code == 409, r.text
+        assert "아이디" in r.json()["error"]
+    finally:
+        _cleanup(book_id, member_id)
+
+
+def test_register_phone_is_optional():
+    uid_with = "phon_" + uuid.uuid4().hex[:6]
+    uid_without = "noph_" + uuid.uuid4().hex[:6]
+    c = TestClient(app)
+
+    def reg(user_id, **over):
+        body = {"user_id": user_id, "password": TEST_PW, "name": "폰검사", "email": f"{user_id}@test.com"}
+        return c.post("/auth/register", json={**body, **over})
+
+    try:
+        assert reg(uid_with, phone="+821012345678").status_code == 201
+        assert _phone_of(uid_with) == "+821012345678"
+
+        assert reg(uid_without).status_code == 201
+        assert _phone_of(uid_without) is None  # 생략하면 NULL
+    finally:
+        _cleanup_user_id(uid_with)
+        _cleanup_user_id(uid_without)
+
+
+def test_check_user_id():
+    _, uid, book_id, member_id = _register_login("chk_")
+    try:
+        fresh = TestClient(app)
+
+        r = fresh.post("/auth/check-user-id", json={"user_id": "free_" + uuid.uuid4().hex[:6]})
+        assert r.status_code == 200 and r.json()["available"] is True
+
+        r = fresh.post("/auth/check-user-id", json={"user_id": uid})
+        assert r.status_code == 200 and r.json()["available"] is False
+
+        assert fresh.post("/auth/check-user-id", json={"user_id": "ab"}).status_code == 400
+        assert fresh.post("/auth/check-user-id", json={"user_id": ""}).status_code == 400
+    finally:
+        _cleanup(book_id, member_id)
 
 
 def test_add_transaction_validation(client, cat_id):

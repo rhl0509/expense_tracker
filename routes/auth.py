@@ -14,6 +14,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+# E.164: '+' 뒤에 국가번호를 포함해 최대 15자리. 정규화는 프론트가 하고 여기선 형식만 강제한다.
+_PHONE_RE = re.compile(r'^\+[1-9]\d{6,14}$')
 
 # ── 로그인 무차별 대입 방어 (아이디별 실패 횟수, 프로세스 로컬) ──
 # 프론트 프록시 뒤라 클라이언트 IP를 신뢰하기 어려워 대상 계정(user_id) 기준으로 제한한다.
@@ -81,6 +83,7 @@ async def register(request: Request):
     password = data.get('password') or ''
     name     = (data.get('name') or '').strip()
     email    = (data.get('email') or '').strip()
+    phone    = (data.get('phone') or '').strip()  # 선택 입력
 
     if not all([user_id, password, name, email]):
         return JSONResponse({"error": "모든 필드를 입력해주세요."}, status_code=400)
@@ -90,19 +93,30 @@ async def register(request: Request):
         return JSONResponse({"error": "비밀번호는 8자 이상이어야 합니다."}, status_code=400)
     if len(name) > 50:
         return JSONResponse({"error": "이름이 너무 깁니다."}, status_code=400)
-    if len(email) > 255 or not _EMAIL_RE.match(email):
+    if len(email) > 100:  # members.email 컬럼이 varchar(100)
+        return JSONResponse({"error": "이메일이 너무 깁니다."}, status_code=400)
+    if not _EMAIL_RE.match(email):
         return JSONResponse({"error": "이메일 형식이 올바르지 않습니다."}, status_code=400)
+    if phone and not _PHONE_RE.match(phone):
+        return JSONResponse({"error": "핸드폰 번호 형식이 올바르지 않습니다."}, status_code=400)
 
     hashed_password = generate_password_hash(password)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM members WHERE user_id = %s", (user_id,))
-            if cursor.fetchone():
-                return JSONResponse({"error": "이미 존재하는 아이디입니다."}, status_code=409)
+            # user_id·email 둘 다 UNIQUE 제약이 있어 한 번에 조회한다.
             cursor.execute(
-                "INSERT INTO members (user_id, password_hash, name, email) VALUES (%s, %s, %s, %s)",
-                (user_id, hashed_password, name, email)
+                "SELECT user_id FROM members WHERE user_id = %s OR email = %s",
+                (user_id, email),
+            )
+            for row in cursor.fetchall():
+                # 컬럼 콜레이션이 대소문자 무시라 파이썬 비교도 맞춘다.
+                if row['user_id'].lower() == user_id.lower():
+                    return JSONResponse({"error": "이미 존재하는 아이디입니다."}, status_code=409)
+                return JSONResponse({"error": "이미 가입된 이메일입니다."}, status_code=409)
+            cursor.execute(
+                "INSERT INTO members (user_id, password_hash, name, email, phone) VALUES (%s, %s, %s, %s, %s)",
+                (user_id, hashed_password, name, email, phone or None)
             )
             new_member_id = cursor.lastrowid
             _create_book_for_member(cursor, new_member_id, name)
@@ -112,6 +126,38 @@ async def register(request: Request):
         conn.rollback()
         logger.exception("회원가입 실패")
         return JSONResponse({"error": "서버 내부 오류가 발생했습니다."}, status_code=500)
+    finally:
+        conn.close()
+
+
+@router.post('/check-user-id')
+async def check_user_id(request: Request):
+    """가입 폼의 아이디 중복확인. 사용 가능 여부만 반환한다.
+
+    레이트리밋을 걸지 않았다. 일부러 뺀 것이라 다시 검토할 필요 없다:
+    - 프론트(Next) rewrites 뒤라 백엔드가 보는 소켓 주소는 항상 127.0.0.1이다.
+      X-Forwarded-For는 정상 요청엔 아예 없고, 클라이언트가 보내면 그 값이 그대로
+      통과한다(Next가 `??=`로만 채운다). 실측으로 확인함.
+      → IP 기준 제한은 공격자가 헤더만 돌리면 무력화되고, 반대로 정상 사용자는
+        전부 한 덩어리로 묶여 서로의 한도를 잡아먹는다. 막지도 못하면서 자해만 한다.
+    - 아이디 존재 여부는 이미 /register가 409로 흘리고 있어 여기서 새로 여는 구멍도 아니다.
+    제대로 막으려면 앞단에 리버스 프록시를 두고 클라이언트가 보낸 XFF를 버린 뒤
+    직접 세팅해야 한다. 그건 인프라 변경이라 별건.
+    """
+    data = await request.json()
+    user_id = (data.get('user_id') or '').strip()
+
+    if not user_id:
+        return JSONResponse({"error": "아이디를 입력해주세요."}, status_code=400)
+    if not (3 <= len(user_id) <= 50):
+        return JSONResponse({"error": "아이디는 3~50자여야 합니다."}, status_code=400)
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM members WHERE user_id = %s", (user_id,))
+            available = cursor.fetchone() is None
+        return JSONResponse({"available": available})
     finally:
         conn.close()
 
