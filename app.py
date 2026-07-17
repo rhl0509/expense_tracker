@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from config import Config
-from routes.utils import LoginRequired, ApiLoginRequired, BookAccessDenied
+from routes.utils import LoginRequired, ApiLoginRequired, BookAccessDenied, IngestAuthFailed
 
 # ── 라우터 import ──
 from routes.auth import router as auth_router
@@ -24,6 +24,7 @@ from routes.transaction import router as transaction_router
 from routes.card_import import router as card_import_router
 from routes.expense_ai import router as ai_router
 from routes.health import router as health_router
+from routes.stock_ingest import router as stock_ingest_router
 
 
 @asynccontextmanager
@@ -66,6 +67,10 @@ async def _api_login_required_handler(request: Request, exc: ApiLoginRequired):
 async def _book_access_denied_handler(request: Request, exc: BookAccessDenied):
     return JSONResponse({"error": "해당 가구에 접근할 권한이 없습니다."}, status_code=403)
 
+@app.exception_handler(IngestAuthFailed)
+async def _ingest_auth_failed_handler(request: Request, exc: IngestAuthFailed):
+    return JSONResponse({"error": "연동 토큰이 유효하지 않습니다."}, status_code=401)
+
 # ── 라우터 등록 ──
 app.include_router(auth_router, prefix="/auth")
 app.include_router(household_router, prefix="/auth")
@@ -73,6 +78,8 @@ app.include_router(transaction_router, prefix="/transaction")
 app.include_router(card_import_router, prefix="/transaction")
 app.include_router(ai_router)
 app.include_router(health_router)
+# 주식 앱 연동. prefix 없음 — 라우트가 /integration/* 를 직접 선언한다.
+app.include_router(stock_ingest_router)
 
 
 @app.get("/")

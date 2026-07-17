@@ -14,6 +14,9 @@ class ApiLoginRequired(Exception):
 class BookAccessDenied(Exception):
     """현재 유저가 해당 가구(account_book)의 멤버가 아님 → 403."""
 
+class IngestAuthFailed(Exception):
+    """주식 앱 연동 토큰 검증 실패 → 401. 실패 사유는 밖으로 흘리지 않는다."""
+
 
 # ── 의존성 함수 ──
 
