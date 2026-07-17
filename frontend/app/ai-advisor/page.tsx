@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { getMonthlySummary, getCategoryChart, getRecent, aiAnalyze, aiChat } from '@/lib/api';
-import { fmt, categoryColor } from '@/lib/utils';
+import { fmt } from '@/lib/utils';
+import { useChartTheme } from '@/lib/chartTheme';
 import type { MonthlySummary, CategoryChart } from '@/lib/types';
 
 const EXCLUDE = ['저축', '투자'];
@@ -17,6 +18,7 @@ interface FinCtx {
 interface ChatMsg { role: 'user' | 'assistant'; content: string; }
 
 export default function AiAdvisorPage() {
+  const theme = useChartTheme();
   const year = new Date().getFullYear();
   const { data: monthly = [] } = useQuery({ queryKey: ['monthly-summary', year], queryFn: () => getMonthlySummary(year) });
   const { data: catChart = [] } = useQuery({ queryKey: ['category-chart'], queryFn: () => getCategoryChart() });
@@ -144,7 +146,7 @@ ${ctx.expenseChange !== null ? `- 전달 대비: ${ctx.expenseChange}% 변화` :
       <h1 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>AI 재무 어드바이저</h1>
 
       {/* 인사이트 카드 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(1,1fr)', gap: 12, marginBottom: 14 }} className="md:grid-cols-3">
+      <div style={{ display: 'grid', gap: 12, marginBottom: 14 }} className="grid-cols-1 md:grid-cols-3">
         <Insight label="이번달 잉여금" value={ctx ? fmt(Math.max(ctx.surplus, 0)) : '—'} sub={ctx ? `저축률 ${ctx.savingRate}%` : ''} />
         <Insight label="전달 대비 지출" value={ctx ? fmt(ctx.expense) : '—'} sub={ctx?.expenseChange != null ? (Number(ctx.expenseChange) >= 0 ? `▲ ${ctx.expenseChange}%` : `▼ ${Math.abs(Number(ctx.expenseChange))}%`) : '비교 없음'} subColor={ctx?.expenseChange != null && Number(ctx.expenseChange) > 0 ? 'var(--expense)' : 'var(--income)'} />
         <Insight label="이번달 저축" value={ctx ? fmt(ctx.saving) : '—'} sub={ctx ? `수입의 ${ctx.savingRate}%` : ''} />
@@ -158,7 +160,7 @@ ${ctx.expenseChange !== null ? `- 전달 대비: ${ctx.expenseChange}% 변화` :
         </div>
       ))}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14, marginBottom: 14 }} className="lg:grid-cols-2">
+      <div style={{ display: 'grid', gap: 14, marginBottom: 14 }} className="grid-cols-1 lg:grid-cols-2">
         {/* AI 분석 */}
         <div className="card" style={{ padding: 22 }}>
           <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>✦ AI 분석 리포트</div>
@@ -172,11 +174,14 @@ ${ctx.expenseChange !== null ? `- 전달 대비: ${ctx.expenseChange}% 변화` :
           <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>카테고리 지출 트렌드</div>
           {ctx && ctx.categories.length ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {ctx.categories.slice(0, 6).map((c, i) => (
+              {ctx.categories.slice(0, 6).map((c) => (
                 <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{ width: 64, fontSize: '0.78rem', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}</div>
                   <div style={{ flex: 1, height: 16, borderRadius: 5, overflow: 'hidden', background: 'var(--hover-bg)' }}>
-                    <div style={{ height: '100%', width: `${((c.value / trendMax) * 100).toFixed(1)}%`, background: categoryColor(c.label, i), borderRadius: 5 }} />
+                    {/* 한 시리즈(카테고리별 지출)라 막대는 전부 한 색이다. 막대마다
+                        색을 달리하면 길이가 이미 보여주는 크기를 색으로 또 부호화하고,
+                        색이 아무 의미도 없는데 의미가 있는 것처럼 읽힌다. */}
+                    <div style={{ height: '100%', width: `${((c.value / trendMax) * 100).toFixed(1)}%`, background: theme.series[0], borderRadius: 5 }} />
                   </div>
                   <div className="font-mono" style={{ width: 64, textAlign: 'right', fontSize: '0.76rem', fontWeight: 600, color: 'var(--text)' }}>{fmt(c.value)}</div>
                 </div>

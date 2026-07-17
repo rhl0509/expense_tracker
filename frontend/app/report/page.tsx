@@ -5,7 +5,8 @@ import { useMemo, useState } from 'react';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { getMonthlySummary, getList } from '@/lib/api';
-import { fmt, fmtFull, categoryColor } from '@/lib/utils';
+import { fmt, fmtFull } from '@/lib/utils';
+import { useChartTheme, foldTop } from '@/lib/chartTheme';
 import type { MonthlySummary, Transaction } from '@/lib/types';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -13,6 +14,7 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 const EXCLUDE = ['저축', '투자'];
 
 export default function ReportPage() {
+  const theme = useChartTheme();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -25,6 +27,8 @@ export default function ReportPage() {
   const expense = mData.filter((d) => d.type === 'expense' && !EXCLUDE.some((c) => d.category_name?.includes(c))).reduce((s, d) => s + Math.floor(d.total), 0);
   const surplus = income - expense;
   const exData = mData.filter((d) => d.type === 'expense' && !EXCLUDE.some((c) => d.category_name?.includes(c)));
+  // 도넛은 6조각까지. 상위 5 + '그 외'로 접고 검증된 팔레트를 쓴다.
+  const exSlices = foldTop(exData.map((d) => ({ label: d.category_name || '기타', value: Math.floor(d.total) })), theme);
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
   const list = txns as Transaction[];
@@ -43,26 +47,32 @@ export default function ReportPage() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gap: 10, marginBottom: 14 }} className="grid-cols-3">
         <Card label="수입" value={income} color="var(--income)" />
         <Card label="지출" value={expense} color="var(--expense)" />
         <Card label="잉여금" value={surplus} color={surplus >= 0 ? 'var(--income)' : 'var(--expense)'} />
       </div>
 
-      <div className="card" style={{ padding: 22, marginBottom: 14 }}>
-        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>카테고리별 지출</div>
+      {/* 도넛과 거래 목록을 나란히 둔다. 도넛은 가로가 남아도는데 혼자 한 줄을 쓰고
+          있었다. alignItems:start 라 도넛 카드가 목록 높이까지 늘어나지 않는다. */}
+      <div style={{ display: 'grid', gap: 14, alignItems: 'start' }} className="grid-cols-1 lg:grid-cols-2">
+      <div className="card" style={{ padding: 18 }}>
+        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>카테고리별 지출</div>
         {exData.length ? (
-          <div style={{ height: 260 }}>
+          <div style={{ height: 220 }}>
             <Doughnut
-              data={{ labels: exData.map((d) => d.category_name || '기타'), datasets: [{ data: exData.map((d) => Math.floor(d.total)), backgroundColor: exData.map((d, i) => categoryColor(d.category_name || '', i)), borderWidth: 0 }] }}
-              options={{ responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right', labels: { color: 'var(--text-2)', font: { size: 11 }, boxWidth: 10 } } } }}
+              data={{ labels: exSlices.map((d) => d.label), datasets: [{ data: exSlices.map((d) => d.value), backgroundColor: exSlices.map((d) => d.color), borderColor: theme.surface, borderWidth: 2 }] }}
+              options={{ responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right', labels: { color: theme.inkLegend, font: { size: 11 }, boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 2, padding: 10 } } } }}
             />
           </div>
         ) : <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', fontSize: '0.85rem' }}>데이터가 없습니다.</div>}
       </div>
 
+      {/* 한 달치가 수백 건일 수 있다. 카드 안에서만 스크롤시켜 페이지가 끝없이
+          길어지지 않게 한다. 헤더는 스크롤 밖에 둬 건수가 항상 보인다. */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--card-border)', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>총 {list.length}건</div>
+        <div style={{ maxHeight: 420, overflowY: 'auto' }}>
         {list.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', fontSize: '0.85rem' }}>거래 내역이 없습니다.</div>
         ) : list.map((t, i) => (
@@ -75,6 +85,8 @@ export default function ReportPage() {
             <span className="font-mono" style={{ fontWeight: 700, fontSize: '0.86rem', color: t.type === 'income' ? 'var(--income)' : 'var(--expense)', whiteSpace: 'nowrap' }}>{t.type === 'income' ? '+' : '-'}{fmtFull(t.amount)}</span>
           </div>
         ))}
+        </div>
+      </div>
       </div>
     </>
   );
