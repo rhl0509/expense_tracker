@@ -6,7 +6,6 @@
   --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'Outfit', 'JetBrains Mono', monospace;
 
-  --color-lime:     #c6f24e;
   --color-income:   #10b981;
   --color-expense:  #f43f5e;
   --color-up:       #10b981;
@@ -18,8 +17,10 @@ html { visibility: hidden; }
 html.theme-ready { visibility: visible; }
 
 /* ── Theme tokens ──────────────────────────────────────────────────── */
+/* 브랜드색(--brand)은 :root에 두지 않는다. 여기 두면 테마별 override가 없어
+   반대 테마에서 조용히 실패한다 — 실제로 이전 --lime이 라이트 모드 흰 배경에서
+   1.30:1로 안 보였다. 테마 블록마다 각각 정의한다. */
 :root {
-  --lime: #c6f24e;
   --income: #10b981;
   --expense: #f43f5e;
 }
@@ -31,12 +32,15 @@ html.theme-ready { visibility: visible; }
   --card-bg:      #13151a;
   --card-border:  rgba(255,255,255,0.06);
   --card-shadow:  0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.2);
-  --accent-soft:  rgba(198,242,78,0.08);
+  --accent-soft:  rgba(123,167,201,0.08);
   --text:         #e8eaed;
   --text-2:       #9aa0ab;
   --text-3:       #606570;
   --text-inv:     #0d0f12;
-  --accent:       #c6f24e;
+  /* 다크 액센트는 밝아야 한다: .btn-primary가 이 색 위에 #0d0f12 글자를 올린다(7.51:1).
+     어두운 네이비를 쓰면 .field:focus 보더가 카드(#13151a) 위에서 안 보인다. */
+  --accent:       #7ba7c9;
+  --brand:        #7ba7c9;
   --input-bg:     rgba(255,255,255,0.04);
   --input-border: rgba(255,255,255,0.1);
   --hover-bg:     rgba(255,255,255,0.04);
@@ -57,7 +61,9 @@ html.theme-ready { visibility: visible; }
   --text-2:       #374151;
   --text-3:       #9ca3af;
   --text-inv:     #ffffff;
+  /* 라이트 CTA는 기존 니어블랙 유지(에디토리얼 의도). 브랜드색만 딥블루로 내린다 — 7.05:1 */
   --accent:       #111827;
+  --brand:        #2f5d7c;
   --input-bg:     #ffffff;
   --input-border: rgba(0,0,0,0.12);
   --hover-bg:     rgba(0,0,0,0.03);
@@ -154,7 +160,13 @@ body {
 
 /* ── Typography helpers ────────────────────────────────────────────── */
 .font-mono { font-family: 'Outfit', 'JetBrains Mono', monospace; }
-.text-lime  { color: var(--lime); }
+.text-brand { color: var(--brand); }
+
+/* 로고(홈 링크) — 누를 수 있다는 신호. 색 대신 투명도를 쓰면 브랜드색이 흐려지므로
+   ✦ 아이콘은 그대로 두고 전체를 살짝 띄운다. */
+.logo-link { transition: opacity 0.15s; border-radius: 6px; }
+.logo-link:hover { opacity: 0.75; }
+.logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .text-up    { color: var(--income); }
 .text-down  { color: var(--expense); }
 .text-muted { color: var(--text-3); }

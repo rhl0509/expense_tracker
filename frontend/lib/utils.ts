@@ -79,8 +79,11 @@ export const CATEGORY_COLORS: Record<string, string> = {
   저축: '#06b6d4',
 };
 
+// 첫 색에 브랜드 액센트(--brand)를 쓰지 않는다. 액센트는 "액션" 기호라 클릭 대상이
+// 아닌 차트 세그먼트에 쓰면 상호작용을 암시하고, 색이 배열 인덱스로 배정돼 브랜드가
+// "우연히 첫 번째인 카테고리"에 붙는다.
 const CHART_PALETTE = [
-  '#c6f24e', '#38bdf8', '#a78bfa', '#f472b6',
+  '#6c9bc0', '#38bdf8', '#a78bfa', '#f472b6',
   '#34d399', '#fbbf24', '#f87171', '#4ade80',
   '#fb923c', '#60a5fa', '#e879f9', '#2dd4bf',
 ];

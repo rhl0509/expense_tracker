@@ -104,7 +104,7 @@ export default function AnalyticsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }} className="md:grid-cols-2">
           <div className="card" style={{ padding: 22 }}>
             <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>결제수단별 비중</div>
-            {payment.length ? <div style={{ height: 260 }}><Doughnut data={{ labels: payment.map((p) => p.payment_method || '기타'), datasets: [{ data: payment.map((p) => p.total), backgroundColor: ['#c6f24e', '#38bdf8', '#a78bfa', '#f472b6', '#34d399', '#fbbf24'], borderWidth: 0 }] }} options={donutOpts} /></div> : <Empty />}
+            {payment.length ? <div style={{ height: 260 }}><Doughnut data={{ labels: payment.map((p) => p.payment_method || '기타'), datasets: [{ data: payment.map((p) => p.total), backgroundColor: ['#6c9bc0', '#38bdf8', '#a78bfa', '#f472b6', '#34d399', '#fbbf24'], borderWidth: 0 }] }} options={donutOpts} /></div> : <Empty />}
           </div>
           <div className="card" style={{ padding: 22 }}>
             <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>결제수단 합계</div>
