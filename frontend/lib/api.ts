@@ -197,6 +197,31 @@ export const importCardStatement = (days = 40) =>
     { method: 'POST' },
   );
 
+// ── 주식 앱 연동 토큰 (stock_ingest) ──────────────────────────────────
+// 백엔드 엔드포인트는 routes/stock_ingest.py(다른 세션 작업)에 있고 여기선 호출만 한다.
+export type IntegrationToken = {
+  id: number;
+  label: string;
+  account_book_id: number;
+  enabled: number;              // 1/0 (백엔드가 tinyint 로 내려줌)
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+export const getIntegrationTokens = () =>
+  req<{ tokens: IntegrationToken[] }>('/integration/tokens');
+
+// 평문 token 은 이 응답에서만 볼 수 있다(해시만 저장). 발급 후 다시 못 본다.
+export const createIntegrationToken = (label: string) =>
+  req<{ id: number; token: string; account_book_id: number; expires_at: string; message: string }>(
+    '/integration/tokens',
+    { method: 'POST', body: JSON.stringify({ label }) },
+  );
+
+export const revokeIntegrationToken = (id: number) =>
+  req<{ message: string }>(`/integration/tokens/${id}/revoke`, { method: 'POST' });
+
 // ── AI ────────────────────────────────────────────────────────────────
 export const streamAgent = (message: string): Promise<Response> =>
   fetch(`${API_BASE}/ai/agent`, {

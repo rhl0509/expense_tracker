@@ -7,6 +7,7 @@ import { changePassword, getProfile, updatePhone } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/providers/ToastProvider';
 import CardCredentials from '@/components/CardCredentials';
+import IntegrationTokens from '@/components/IntegrationTokens';
 
 // 백엔드 auth.py 의 _PW_RULES 와 같은 규칙. 가입 화면(register/page.tsx)과도 쌍이다.
 // 셋 중 하나만 바꾸면 안 된다.
@@ -124,6 +125,9 @@ export default function MyPage() {
             두 곳에 나눠두면 어느 쪽이 진짜인지 헷갈린다. */}
         <div style={{ gridColumn: '1 / -1' }}>
           <CardCredentials />
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <IntegrationTokens />
         </div>
       </div>
     </>
