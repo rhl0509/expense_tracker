@@ -4,6 +4,7 @@
 임시 테스트 유저를 생성/로그인하고, 테스트가 만든 데이터(거래·정기결제·카테고리)는
 teardown에서 모두 삭제한다. 공유 자원(account_book=2의 settings)은 스냅샷 후 복원한다.
 """
+import hashlib
 import os
 import uuid
 from datetime import datetime
@@ -711,5 +712,103 @@ def test_card_credentials_crud():
         assert c.delete("/transaction/card-credentials").status_code == 200
         assert c.get("/transaction/card-credentials").json()["configured"] is False
         assert c.post("/transaction/import/card").status_code == 400
+    finally:
+        _cleanup(book_id, mid)
+
+
+# ──────────────────────────────────────────────────────────────────
+# 주식 앱 연동 (stock_ingest) — 토큰 발급/수신 왕복 + 방어
+# stock_ingest.py 파일 헤더가 "완화하지 말 것"이라 명시한 4가지를 회귀로 고정한다.
+# ──────────────────────────────────────────────────────────────────
+def _idem():
+    return hashlib.sha256(uuid.uuid4().bytes).hexdigest()
+
+
+def _ingest_body(**over):
+    b = {"idempotency_key": _idem(), "source": "dividend", "type": "income",
+         "title": "삼성전자 배당", "amount": "1130", "date": "2026-07-18"}
+    b.update(over)
+    return b
+
+
+def test_stock_ingest_roundtrip():
+    """발급 → 그 토큰으로 기록 → 멱등. 토큰·원장은 장부 CASCADE 로 teardown 에서 정리."""
+    c, uid, book_id, mid = _register_login("stk_")
+    try:
+        r = c.post("/integration/tokens", json={"label": "test"})
+        assert r.status_code == 201
+        tok = r.json()["token"]
+        assert tok.startswith("gbk_")                    # 평문은 발급 응답에서만
+        assert r.json()["account_book_id"] == book_id    # 내 장부로 발급
+        H = {"Authorization": f"Bearer {tok}"}
+
+        r = c.post("/integration/stock/transactions", headers=H, json=_ingest_body())
+        assert r.status_code == 201 and r.json()["duplicate"] is False
+        txn_id = r.json()["transaction_id"]
+
+        # 멱등: 같은 키 재전송은 안전(같은 id, duplicate=True). stock_git 이 재시도해도 안전.
+        k = _idem()
+        a = c.post("/integration/stock/transactions", headers=H, json=_ingest_body(idempotency_key=k))
+        b = c.post("/integration/stock/transactions", headers=H, json=_ingest_body(idempotency_key=k))
+        assert a.json()["transaction_id"] == b.json()["transaction_id"]
+        assert b.json()["duplicate"] is True
+    finally:
+        _cleanup(book_id, mid)
+
+
+def test_stock_ingest_rejects_bad_tokens():
+    c, uid, book_id, mid = _register_login("stk_")
+    try:
+        for hdr in ({"Authorization": "Bearer gbk_notreal"},
+                    {"Authorization": "no-bearer-prefix"},
+                    {}):
+            assert c.post("/integration/stock/transactions", headers=hdr,
+                          json=_ingest_body()).status_code == 401
+    finally:
+        _cleanup(book_id, mid)
+
+
+def test_stock_ingest_revoke_kills_token():
+    c, uid, book_id, mid = _register_login("stk_")
+    try:
+        tok = c.post("/integration/tokens", json={}).json()["token"]
+        tid = c.get("/integration/tokens").json()["tokens"][0]["id"]
+        H = {"Authorization": f"Bearer {tok}"}
+        assert c.post("/integration/stock/transactions", headers=H, json=_ingest_body()).status_code == 201
+        assert c.post(f"/integration/tokens/{tid}/revoke").status_code == 200
+        # 취소 즉시 막힌다 — 키 회전·재배포 없이 한 줄로 끊긴다
+        assert c.post("/integration/stock/transactions", headers=H, json=_ingest_body()).status_code == 401
+    finally:
+        _cleanup(book_id, mid)
+
+
+def test_stock_ingest_token_is_not_a_session():
+    """방어1: 이 토큰은 세션을 열지 않는다. 파괴적 /transaction/reset 의 열쇠가 되면 안 된다
+    (배당 기록용 토큰이 장부 전멸 도구가 되는 걸 막는다 — stock_ingest.py 헤더 1번)."""
+    c, uid, book_id, mid = _register_login("stk_")
+    try:
+        tok = c.post("/integration/tokens", json={}).json()["token"]
+        anon = TestClient(app)   # 세션 없는 클라이언트
+        r = anon.post("/transaction/reset", headers={"Authorization": f"Bearer {tok}"})
+        assert r.status_code == 401
+    finally:
+        _cleanup(book_id, mid)
+
+
+def test_stock_ingest_category_whitelist():
+    """방어: category_hint 화이트리스트 밖(임의 이름)은 미분류로 기록 — 침해된 주식 앱이
+    사용자 장부에 임의 카테고리를 만들거나 기존 것에 붙이지 못한다."""
+    c, uid, book_id, mid = _register_login("stk_")
+    try:
+        H = {"Authorization": f"Bearer {c.post('/integration/tokens', json={}).json()['token']}"}
+        r = c.post("/integration/stock/transactions", headers=H,
+                   json=_ingest_body(type="expense", title="라면", amount="900",
+                                     category_hint="식비", source="trade"))
+        assert r.status_code == 201
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT category_id FROM transactions WHERE id=%s", (r.json()["transaction_id"],))
+            assert cur.fetchone()["category_id"] is None   # 미분류
+        conn.close()
     finally:
         _cleanup(book_id, mid)
