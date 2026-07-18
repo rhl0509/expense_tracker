@@ -569,6 +569,29 @@ def test_profile():
         _cleanup_user_id(uid)
 
 
+def test_update_phone():
+    uid = "uph_" + uuid.uuid4().hex[:6]
+    c = TestClient(app)
+    try:
+        assert TestClient(app).post("/auth/update-phone", json={"phone": "+821011112222"}).status_code == 401
+        c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": "폰", "email": f"{uid}@test.com"})
+        c.post("/auth/login", json={"user_id": uid, "password": TEST_PW})
+        assert c.get("/auth/profile").json()["phone"] is None   # 가입 시 미등록
+
+        assert c.post("/auth/update-phone", json={"phone": "+821012345678"}).status_code == 200
+        assert c.get("/auth/profile").json()["phone"] == "+821012345678"
+
+        # 서버는 E.164 만 받는다(정규화는 프론트). 국내 표기 그대로는 거부하고 값은 유지
+        assert c.post("/auth/update-phone", json={"phone": "010-1234-5678"}).status_code == 400
+        assert c.get("/auth/profile").json()["phone"] == "+821012345678"
+
+        # 빈 값 = 등록 해제
+        assert c.post("/auth/update-phone", json={"phone": ""}).status_code == 200
+        assert c.get("/auth/profile").json()["phone"] is None
+    finally:
+        _cleanup_user_id(uid)
+
+
 def test_change_password():
     c, uid, book_id, mid = _register_login("chpw_")
     new_pw = "Newpass1!"

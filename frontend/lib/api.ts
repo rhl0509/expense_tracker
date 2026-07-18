@@ -48,6 +48,13 @@ export const logout = () => fetch(`${API_BASE}/auth/logout`, { method: 'POST', c
 export const getProfile = () =>
   req<{ user_id: string; name: string; email: string; phone: string | null }>('/auth/profile');
 
+// phone 은 E.164('+821012345678') 또는 빈 문자열(등록 해제). 정규화는 프론트가 한다.
+export const updatePhone = (phone: string) =>
+  req<{ message: string; phone: string | null }>('/auth/update-phone', {
+    method: 'POST',
+    body: JSON.stringify({ phone }),
+  });
+
 export const changePassword = (current_password: string, new_password: string) =>
   req<{ message: string }>('/auth/change-password', {
     method: 'POST',

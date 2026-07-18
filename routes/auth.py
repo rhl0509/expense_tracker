@@ -254,6 +254,31 @@ async def profile(request: Request, _=Depends(api_require_login)):
         conn.close()
 
 
+@router.post('/update-phone')
+async def update_phone(request: Request, _=Depends(api_require_login)):
+    """마이페이지에서 핸드폰을 등록·수정한다. 빈 값이면 등록 해제(NULL).
+
+    형식은 회원가입과 같은 _PHONE_RE(E.164)로 강제한다 — 정규화는 프론트가 하고
+    여기선 최종 형태만 본다. members.phone 은 varchar(20).
+    """
+    data = await request.json()
+    phone = (data.get('phone') or '').strip()
+    if phone and not _PHONE_RE.match(phone):
+        return JSONResponse({"error": "핸드폰 번호 형식이 올바르지 않습니다."}, status_code=400)
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE members SET phone = %s WHERE id = %s",
+                (phone or None, get_user_no(request)),
+            )
+        conn.commit()
+        return {"message": "핸드폰 번호가 저장되었습니다.", "phone": phone or None}
+    finally:
+        conn.close()
+
+
 @router.post('/change-password')
 async def change_password(request: Request, _=Depends(api_require_login)):
     """현재 비밀번호를 확인한 뒤 새 비밀번호로 바꾼다.
