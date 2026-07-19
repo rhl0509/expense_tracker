@@ -124,6 +124,8 @@ async def get_card_credentials(request: Request, _=Depends(api_require_login)):
         return {"configured": False, "imap_user_masked": None, "has_woori": False}
     return {
         "configured": True,
+        # 이메일 원문은 '다시 설정' 시 입력칸을 채우는 용도. 비밀번호는 절대 돌려주지 않는다.
+        "imap_user": row["imap_user"],
         "imap_user_masked": _mask_email(row["imap_user"]),
         "has_woori": row["woori_birth_enc"] is not None,
     }
@@ -136,10 +138,23 @@ async def save_card_credentials(request: Request, _=Depends(api_require_login)):
     imap_password = (data.get("imap_password") or "").replace(" ", "")
     woori_birth = (data.get("woori_birth") or "").strip()
 
+    member_id = get_user_no(request)
+    existing = _load_credentials(member_id)
+
     if "@" not in imap_user or len(imap_user) > 255:
         return JSONResponse({"error": "올바른 Gmail 주소를 입력하세요."}, status_code=400)
-    if not (8 <= len(imap_password) <= 128):
+
+    # '다시 설정'에서 비밀번호를 비우면 기존 비밀번호를 유지한다(이메일·생년만 수정할 때 재입력 없이).
+    # 유지하는 경우에도 아래에서 그 비밀번호로 실제 IMAP 로그인을 다시 확인한다.
+    if not imap_password:
+        if not existing:
+            return JSONResponse({"error": "앱 비밀번호를 입력하세요."}, status_code=400)
+        imap_password = _decrypt(existing["imap_password_enc"])
+        if imap_password is None:
+            return JSONResponse({"error": "기존 비밀번호를 읽지 못했습니다. 다시 입력해 주세요."}, status_code=400)
+    elif not (8 <= len(imap_password) <= 128):
         return JSONResponse({"error": "앱 비밀번호가 올바르지 않습니다."}, status_code=400)
+
     if woori_birth and (len(woori_birth) != 6 or not woori_birth.isdigit()):
         return JSONResponse({"error": "우리카드 생년월일은 숫자 6자리여야 합니다."}, status_code=400)
 
@@ -169,7 +184,13 @@ async def save_card_credentials(request: Request, _=Depends(api_require_login)):
         )
 
     pw_enc = _encrypt(imap_password)
-    birth_enc = _encrypt(woori_birth) if woori_birth else None
+    # 생년월일을 입력하면 갱신, 비우면 기존 값을 유지한다.
+    if woori_birth:
+        birth_enc = _encrypt(woori_birth)
+    elif existing:
+        birth_enc = existing["woori_birth_enc"]
+    else:
+        birth_enc = None
 
     conn = get_db_connection()
     try:
@@ -182,7 +203,7 @@ async def save_card_credentials(request: Request, _=Depends(api_require_login)):
                      imap_user = VALUES(imap_user),
                      imap_password_enc = VALUES(imap_password_enc),
                      woori_birth_enc = VALUES(woori_birth_enc)""",
-                (get_user_no(request), imap_user, pw_enc, birth_enc),
+                (member_id, imap_user, pw_enc, birth_enc),
             )
         conn.commit()
     finally:

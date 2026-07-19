@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/providers/ToastProvider';
 import ConfirmModal from '@/components/ConfirmModal';
-import { logout, resetData } from '@/lib/api';
+import { logout, getAiCredential } from '@/lib/api';
 import { THEME_COLORS } from '@/lib/theme';
 
 interface NavItem { href: string; icon: string; label: string; }
@@ -81,22 +81,38 @@ function ThemeToggle() {
   );
 }
 
-function NavLink({ item, active }: { item: NavItem; active: boolean }) {
+function LockIcon() {
+  return (
+    <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+      style={{ flexShrink: 0, opacity: 0.75 }} aria-hidden="true">
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
+function NavLink({ item, active, locked, onLockedClick }: {
+  item: NavItem; active: boolean; locked?: boolean; onLockedClick?: () => void;
+}) {
   return (
     <Link
       href={item.href}
+      onClick={locked ? (e) => { e.preventDefault(); onLockedClick?.(); } : undefined}
+      aria-disabled={locked || undefined}
       style={{
         display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10,
         fontSize: '0.85rem', fontWeight: active ? 700 : 500,
-        color: active ? 'var(--accent)' : 'var(--text-2)',
-        background: active ? 'var(--accent-soft)' : 'transparent',
+        color: locked ? 'var(--text-3)' : active ? 'var(--accent)' : 'var(--text-2)',
+        background: active && !locked ? 'var(--accent-soft)' : 'transparent',
         textDecoration: 'none', transition: 'all 0.15s', marginBottom: 2,
       }}
       onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--hover-bg)'; }}
       onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       <span style={{ fontSize: '1rem', width: 20, textAlign: 'center' }}>{item.icon}</span>
-      {item.label}
+      <span style={{ flex: 1 }}>{item.label}</span>
+      {locked && <LockIcon />}
     </Link>
   );
 }
@@ -113,10 +129,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const toast = useToast();
-  const qc = useQueryClient();
   const { user, isLoading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [modal, setModal] = useState<'logout' | 'reset' | null>(null);
+  const [modal, setModal] = useState<'logout' | 'ai-locked' | null>(null);
+  // AI 어드바이저는 본인 API 키가 있어야 쓸 수 있다. 미등록이면 사이드탭에서 자물쇠로 막고
+  // 등록을 안내한다. 로드 전(undefined)엔 잠그지 않는다 — 링크가 잠깐 잠겼다 풀리는 깜빡임 방지.
+  const { data: aiCred } = useQuery({ queryKey: ['ai-credential'], queryFn: getAiCredential });
+  const aiLocked = aiCred ? !aiCred.configured : false;
 
   useEffect(() => {
     if (!isLoading && !user) router.replace('/login');
@@ -129,18 +148,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const handleLogout = async () => {
     await logout();
     router.replace('/login');
-  };
-
-  const handleReset = async () => {
-    try {
-      await resetData();
-      setModal(null);
-      qc.invalidateQueries();
-      toast('데이터가 초기화되었습니다.', 'success');
-      router.push('/dashboard');
-    } catch {
-      toast('초기화에 실패했습니다.', 'error');
-    }
   };
 
   if (isLoading) {
@@ -174,21 +181,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <GroupLabel>가계부</GroupLabel>
           {NAV_MAIN.map((item) => <NavLink key={item.href} item={item} active={isActive(item.href)} />)}
           <GroupLabel>분석</GroupLabel>
-          {NAV_ANALYSIS.map((item) => <NavLink key={item.href} item={item} active={isActive(item.href)} />)}
+          {NAV_ANALYSIS.map((item) => (
+            <NavLink key={item.href} item={item} active={isActive(item.href)}
+              locked={item.href === '/ai-advisor' && aiLocked}
+              onLockedClick={() => setModal('ai-locked')} />
+          ))}
         </nav>
 
         <div style={{ padding: '12px 10px', borderTop: '1px solid var(--nav-border)', position: 'relative' }}>
-          <a
-            href="http://localhost:5001/stock_live"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10,
-              fontSize: '0.82rem', fontWeight: 600, color: 'var(--brand)', textDecoration: 'none',
-              background: 'var(--accent-soft)', marginBottom: 8,
-            }}
-          >
-            <span>📈</span> 주식 앱
-          </a>
-
           {menuOpen && (
             <div
               style={{
@@ -207,14 +207,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               >
                 ⚙ 마이페이지
               </Link>
-              <div style={{ height: 1, background: 'var(--card-border)' }} />
-              <button
-                className="menu-item"
-                style={menuItemStyle}
-                onClick={() => { setMenuOpen(false); setModal('reset'); }}
-              >
-                ↺ 데이터 초기화
-              </button>
               <div style={{ height: 1, background: 'var(--card-border)' }} />
               <button
                 style={{ ...menuItemStyle, color: 'var(--expense)' }}
@@ -271,17 +263,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         >
           {BOTTOM_TABS.map((item) => {
             const active = isActive(item.href);
+            const locked = item.href === '/ai-advisor' && aiLocked;
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={locked ? (e) => { e.preventDefault(); setModal('ai-locked'); } : undefined}
+                aria-disabled={locked || undefined}
                 style={{
                   flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
                   padding: '6px 4px', fontSize: '0.6rem', fontWeight: active ? 700 : 500,
-                  color: active ? 'var(--accent)' : 'var(--text-3)', textDecoration: 'none', borderRadius: 8,
+                  color: active && !locked ? 'var(--accent)' : 'var(--text-3)', textDecoration: 'none', borderRadius: 8,
                 }}
               >
-                <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>
+                <span style={{ fontSize: '1.1rem' }}>{locked ? '🔒' : item.icon}</span>
                 {item.label}
               </Link>
             );
@@ -300,13 +295,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         onCancel={() => setModal(null)}
       />
       <ConfirmModal
-        open={modal === 'reset'}
+        open={modal === 'ai-locked'}
         variant="warning"
-        icon="↺"
-        title="데이터를 초기화 하시겠어요?"
-        message={<>모든 거래 내역이 <strong>영구적으로 삭제</strong>됩니다.<br />이 작업은 되돌릴 수 없습니다.</>}
-        confirmText="초기화"
-        onConfirm={handleReset}
+        icon="🔒"
+        title="AI 어드바이저를 쓰려면 API 키가 필요해요"
+        message={<>AI 어드바이저는 <strong>본인의 API 키</strong>로 작동합니다.<br />마이페이지에서 키를 등록하면 바로 이용할 수 있습니다.</>}
+        confirmText="키 등록하러 가기"
+        onConfirm={() => { setModal(null); router.push('/my'); }}
         onCancel={() => setModal(null)}
       />
     </div>

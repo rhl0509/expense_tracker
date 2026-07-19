@@ -1,0 +1,40 @@
+# 리버스 프록시 + 자동 HTTPS.
+# 배포: DOMAIN 에 실제 도메인을 주면 Let's Encrypt 로 인증서를 자동 발급·갱신한다.
+# 로컬: DOMAIN 미설정(localhost) 이면 Caddy 내부 인증서를 쓴다(브라우저 경고는 정상).
+#
+# 브라우저 → Caddy(443, TLS) → frontend(Next). Next 가 /auth /transaction /ai
+# /integration /health 를 다시 backend(FastAPI)로 프록시하므로 Caddy 는 프론트로만 보낸다.
+{
+	# caddy-ratelimit 플러그인의 directive 실행 순서를 지정한다.
+	order rate_limit before reverse_proxy
+}
+
+{$DOMAIN:localhost} {
+	encode gzip
+	header {
+		# HSTS 는 인증서가 안정된 뒤 유지한다. 초기 배포 땐 max-age 를 짧게 두고 확인 권장.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		-Server
+	}
+	# 무인증 대용량 본문으로 워커 메모리를 고갈시키는 DoS 방어. 대부분 요청은 수 KB이고
+	# CSV 가져오기(수 MB)까지 통과하되, 그 이상은 413 으로 막는다.
+	request_body {
+		max_size 10MB
+	}
+	# 가입·로그인 남용(봇 대량가입·무차별 대입) 방어. Caddy 는 실제 원격 IP({remote_host})를
+	# 직접 알므로 X-Forwarded-For 위조 걱정 없이 앞단에서 IP 당 제한한다.
+	rate_limit {
+		zone auth_zone {
+			match {
+				path /auth/register /auth/login
+			}
+			key {remote_host}
+			events 10
+			window 1m
+		}
+	}
+	reverse_proxy frontend:3000
+}

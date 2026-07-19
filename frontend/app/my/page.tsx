@@ -8,6 +8,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/providers/ToastProvider';
 import CardCredentials from '@/components/CardCredentials';
 import IntegrationTokens from '@/components/IntegrationTokens';
+import AiCredentials from '@/components/AiCredentials';
+import DangerZone from '@/components/DangerZone';
+import { SectionCard, rowStyle, labelStyle, noticeStyle, errorStyle } from '@/components/my/Section';
 
 // 백엔드 auth.py 의 _PW_RULES 와 같은 규칙. 가입 화면(register/page.tsx)과도 쌍이다.
 // 셋 중 하나만 바꾸면 안 된다.
@@ -68,12 +71,11 @@ export default function MyPage() {
 
   return (
     <>
-      <h1 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>마이페이지</h1>
+      <h1 style={{ margin: '0 0 20px', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text)' }}>마이페이지</h1>
 
-      <div style={{ display: 'grid', gap: 14, alignItems: 'start' }} className="grid-cols-1 lg:grid-cols-2">
+      <div style={{ display: 'grid', gap: 16, alignItems: 'start' }} className="grid-cols-1 lg:grid-cols-2">
         {/* 계정 정보 */}
-        <div className="card" style={{ padding: 18 }}>
-          <div style={sectionTitle}>계정</div>
+        <SectionCard icon="person" title="계정">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Row label="이름" value={profile?.name ?? user?.user_name ?? '-'} />
             <Row label="아이디" value={profile?.user_id ?? user?.user_id ?? '-'} />
@@ -84,29 +86,28 @@ export default function MyPage() {
               disabled={!profile}
             />
           </div>
-          <div style={noticeStyle}>
-            ⓘ 이름·아이디·이메일은 지금 화면에서 바꿀 수 없습니다.
+          <div style={{ ...noticeStyle, marginTop: 12 }}>
+            이름·아이디·이메일은 지금 화면에서 바꿀 수 없습니다.
           </div>
-        </div>
+        </SectionCard>
 
         {/* 비밀번호 변경 */}
-        <div className="card" style={{ padding: 18 }}>
-          <div style={sectionTitle}>비밀번호 변경</div>
-          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <SectionCard icon="lock" title="비밀번호 변경">
+          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
-              <label style={labelStyle}>현재 비밀번호</label>
-              <input className="field" type="password" autoComplete="current-password"
+              <label htmlFor="pw-current" style={labelStyle}>현재 비밀번호</label>
+              <input id="pw-current" className="field" type="password" autoComplete="current-password"
                 value={current} onChange={(e) => setCurrent(e.target.value)} required />
             </div>
             <div>
-              <label style={labelStyle}>새 비밀번호</label>
-              <input className="field" type="password" autoComplete="new-password"
+              <label htmlFor="pw-new" style={labelStyle}>새 비밀번호</label>
+              <input id="pw-new" className="field" type="password" autoComplete="new-password"
                 value={next} onChange={(e) => setNext(e.target.value)} required />
               <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: 'var(--text-3)' }}>{PW_HINT}</p>
             </div>
             <div>
-              <label style={labelStyle}>새 비밀번호 확인</label>
-              <input className="field" type="password" autoComplete="new-password"
+              <label htmlFor="pw-confirm" style={labelStyle}>새 비밀번호 확인</label>
+              <input id="pw-confirm" className="field" type="password" autoComplete="new-password"
                 value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
             </div>
 
@@ -119,15 +120,32 @@ export default function MyPage() {
               {mut.isPending ? '변경 중...' : '비밀번호 변경'}
             </button>
           </form>
+        </SectionCard>
+
+        {/* ── 연동 서비스 그룹 ── 신원(계정·비번)과 외부 연동을 시각적으로 가른다. */}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-3)' }}>연동 서비스</span>
+          <span style={{ flex: 1, height: 1, background: 'var(--card-border)' }} />
         </div>
 
-        {/* 내 정보(구 /settings)에 있던 카드 연동. 계정 관련이 한 곳에 모이도록 옮겼다.
-            두 곳에 나눠두면 어느 쪽이 진짜인지 헷갈린다. */}
+        {/* 계정 관련 연동이 한 곳에 모이도록: AI 키(BYOK) → 카드 명세서 → 주식 앱 */}
+        <div style={{ gridColumn: '1 / -1' }}>
+          <AiCredentials />
+        </div>
         <div style={{ gridColumn: '1 / -1' }}>
           <CardCredentials />
         </div>
         <div style={{ gridColumn: '1 / -1' }}>
           <IntegrationTokens />
+        </div>
+
+        {/* ── 데이터 관리 ── 되돌릴 수 없는 작업이라 연동과 시각적으로 가른다. */}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-3)' }}>데이터 관리</span>
+          <span style={{ flex: 1, height: 1, background: 'var(--card-border)' }} />
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <DangerZone />
         </div>
       </div>
     </>
@@ -136,13 +154,10 @@ export default function MyPage() {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10,
-      border: '1px solid var(--card-border)', background: 'var(--hover-bg)', padding: '9px 12px',
-    }}>
-      <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', width: 56, flexShrink: 0 }}>{label}</span>
+    <div style={rowStyle}>
+      <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', minWidth: 56, flexShrink: 0 }}>{label}</span>
       {/* 이메일이 길면 카드를 밀어내지 않고 말줄임 */}
-      <span style={{ fontSize: '0.85rem', color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+      <span style={{ fontSize: '0.875rem', color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
     </div>
   );
 }
@@ -195,12 +210,9 @@ function PhoneEditor({ phone, onSaved, disabled }: {
 
   if (!editing) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10,
-        border: '1px solid var(--card-border)', background: 'var(--hover-bg)', padding: '9px 12px',
-      }}>
-        <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', width: 56, flexShrink: 0 }}>핸드폰</span>
-        <span style={{ fontSize: '0.85rem', color: phone ? 'var(--text)' : 'var(--text-3)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prettyPhone(phone)}</span>
+      <div style={rowStyle}>
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', minWidth: 56, flexShrink: 0 }}>핸드폰</span>
+        <span style={{ fontSize: '0.875rem', color: phone ? 'var(--text)' : 'var(--text-3)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prettyPhone(phone)}</span>
         <button className="btn btn-ghost btn-sm" onClick={open} disabled={disabled} style={{ flexShrink: 0 }}>
           {phone ? '수정' : '등록'}
         </button>
@@ -228,14 +240,3 @@ function PhoneEditor({ phone, onSaved, disabled }: {
     </div>
   );
 }
-
-const sectionTitle: React.CSSProperties = { fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 12 };
-const labelStyle: React.CSSProperties = { display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-3)', marginBottom: 5 };
-const noticeStyle: React.CSSProperties = {
-  fontSize: '0.74rem', color: 'var(--text-3)', lineHeight: 1.6, borderRadius: 10,
-  background: 'var(--accent-soft)', padding: '8px 12px', marginTop: 10,
-};
-const errorStyle: React.CSSProperties = {
-  fontSize: '0.78rem', lineHeight: 1.6, color: 'var(--expense)', borderRadius: 10,
-  background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)', padding: '8px 12px',
-};

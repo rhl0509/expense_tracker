@@ -10,6 +10,15 @@ echo  가계부 전체 실행 (백엔드 5000 + 프론트 3000)
 echo ===================================================
 echo.
 
+REM ── 기존 인스턴스 정리 (겹침 방지) ──────────────────────────────────
+REM   백엔드 5000 / 프론트 3000 을 잡은 프로세스 중 **이 폴더(expense_tracker) 소속만**
+REM   종료한다. 포트만 보고 죽이면 3000 에 다른 프로젝트가 떠 있을 때 남의 서버를
+REM   내린다(실제로 그런 경우가 있었다). 판정 로직은 _stop_gagebu.ps1 에 있다.
+echo [0/2] 기존 5000/3000 인스턴스 정리...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_stop_gagebu.ps1"
+REM   포트 해제 대기
+timeout /t 2 > nul
+
 REM ── 백엔드 (FastAPI, 포트 5000) ──
 REM   start 가 부모 배치의 현재 폴더(%~dp0)와 환경변수(PYTHONUTF8 등)를 그대로 상속하므로
 REM   중첩 따옴표 없이 /d 로 작업 폴더만 지정한다.

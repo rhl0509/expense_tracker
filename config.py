@@ -40,7 +40,11 @@ class Config:
         if o.strip()
     ]
 
-    ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+    # BYOK: 서버 공용 AI 키는 두지 않는다. AI 키는 사용자별로 DB에 암호화 저장하고
+    # (member_ai_credentials), 이 값을 암호화하는 별도 시크릿만 서버가 가진다. SECRET_KEY
+    # 유출이 곧 모든 사용자 API 키 복호화로 번지지 않도록 분리한다. 미설정 시 SECRET_KEY
+    # 파생 키로 폴백한다.
+    AI_ENC_KEY = os.getenv('AI_ENC_KEY')
 
     # 카드 명세서 자동 수집 스케줄러(하루 1회 폴링) 사용 여부.
     CARD_IMPORT_SCHEDULER = _env_bool('CARD_IMPORT_SCHEDULER', True)

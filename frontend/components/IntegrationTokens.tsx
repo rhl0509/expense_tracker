@@ -8,6 +8,7 @@ import {
 } from '@/lib/api';
 import { useToast } from '@/components/providers/ToastProvider';
 import ConfirmModal from '@/components/ConfirmModal';
+import { SectionCard, StatusBadge, rowStyle, labelStyle } from '@/components/my/Section';
 
 export default function IntegrationTokens() {
   const qc = useQueryClient();
@@ -50,14 +51,16 @@ export default function IntegrationTokens() {
 
   return (
     <>
-      <div className="card" style={{ padding: 18 }}>
-        <div style={sectionTitle}>주식 앱 연동</div>
-        <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginBottom: 14, lineHeight: 1.6 }}>
+      <SectionCard
+        icon="trend"
+        title="주식 앱 연동"
+        badge={!tokensQ.isLoading && <StatusBadge on={active.length > 0} />}
+        desc={<>
           주식 앱의 매매·배당을 이 가계부에 자동으로 기록합니다. 토큰을 발급해 주식 앱 설정에
           붙여넣으면 연동됩니다. <b>토큰은 이 장부에만</b> 기록할 수 있고, 다른 작업(로그인·삭제)에는
           쓸 수 없습니다.
-        </div>
-
+        </>}
+      >
         {/* 발급 직후 평문 — 다시 볼 수 없다 */}
         {issued && (
           <div style={issuedBox} role="alert">
@@ -74,25 +77,28 @@ export default function IntegrationTokens() {
         )}
 
         {/* 발급 폼 */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: active.length ? 14 : 0 }}>
-          <input className="field" placeholder="토큰 이름 (예: 내 데스크탑 주식앱)" value={label}
-            onChange={(e) => setLabel(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
-          <button className="btn btn-primary btn-sm" onClick={() => createMut.mutate()}
-            disabled={createMut.isPending} style={{ flexShrink: 0 }}>
-            {createMut.isPending ? '발급 중…' : '토큰 발급'}
-          </button>
+        <div style={{ marginBottom: 14 }}>
+          <label htmlFor="token-label" style={labelStyle}>새 토큰 발급</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input id="token-label" className="field" placeholder="토큰 이름 (예: 내 데스크탑 주식앱)" value={label}
+              onChange={(e) => setLabel(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+            <button className="btn btn-primary btn-sm" onClick={() => createMut.mutate()}
+              disabled={createMut.isPending} style={{ flexShrink: 0 }}>
+              {createMut.isPending ? '발급 중…' : '토큰 발급'}
+            </button>
+          </div>
         </div>
 
         {/* 활성 토큰 목록 */}
         {tokensQ.isLoading ? (
           <div style={{ fontSize: '0.82rem', color: 'var(--text-3)' }}>불러오는 중…</div>
-        ) : active.length > 0 && (
+        ) : active.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {active.map((t) => (
               <div key={t.id} style={rowStyle}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: 1 }}>
+                  <div style={{ fontSize: '0.875rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</div>
+                  <div className="font-mono" style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: 1 }}>
                     {t.last_used_at ? `마지막 사용 ${fmtDate(t.last_used_at)}` : '아직 사용 안 함'}
                     {t.expires_at && ` · 만료 ${fmtDate(t.expires_at)}`}
                   </div>
@@ -102,8 +108,12 @@ export default function IntegrationTokens() {
               </div>
             ))}
           </div>
+        ) : (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', padding: '2px' }}>
+            아직 발급된 토큰이 없습니다. 위에서 토큰을 발급해 주식 앱에 붙여넣으세요.
+          </div>
         )}
-      </div>
+      </SectionCard>
 
       <ConfirmModal
         open={revoking !== null}
@@ -125,11 +135,6 @@ function fmtDate(iso: string): string {
   return isNaN(d.getTime()) ? iso.slice(0, 10) : d.toISOString().slice(0, 10);
 }
 
-const sectionTitle: React.CSSProperties = { fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 12 };
-const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10,
-  border: '1px solid var(--card-border)', background: 'var(--hover-bg)', padding: '9px 12px',
-};
 const issuedBox: React.CSSProperties = {
   borderRadius: 10, border: '1px solid var(--income)', background: 'rgba(16,185,129,0.08)',
   padding: '10px 12px', marginBottom: 14,

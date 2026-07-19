@@ -69,23 +69,27 @@ def is_book_owner(cursor, account_book_id, member_id):
 
 
 def get_account_book_id(request: Request):
-    """세션의 활성 가구 id. 세션에 없으면 DB에서 대표 장부를 찾아 캐시한다.
+    """세션의 활성 가구 id. 세션 값이라도 매 요청 멤버십을 재확인한다.
 
-    account_book_id는 로그인/장부전환 시 멤버십을 검증한 값만 서명된 세션에 기록되므로,
-    읽기 시점에는 세션 값을 신뢰한다(쿠키는 위조 불가).
+    쿠키는 위조 불가하지만 로그인 후 멤버십이 바뀔 수 있다(owner 가 멤버를 내보냄).
+    서명 세션에 남은 옛 account_book_id 로 강퇴된 멤버가 계속 접근하는 것을 막으려면
+    기록 시점 검증만으론 부족하고, 읽기 시점에도 확인해야 한다.
     """
-    book_id = request.session.get("account_book_id")
-    if book_id is not None:
-        return book_id
     member_id = request.session.get("user_no")
     if member_id is None:
         return None
+    book_id = request.session.get("account_book_id")
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            if book_id is not None and is_book_member(cursor, book_id, member_id):
+                return book_id
+            # 세션에 없거나 더 이상 그 장부의 멤버가 아님 → 대표 장부로 재해석
             book_id = get_default_book_id(cursor, member_id)
     finally:
         conn.close()
     if book_id is not None:
         request.session["account_book_id"] = book_id
+    else:
+        request.session.pop("account_book_id", None)
     return book_id

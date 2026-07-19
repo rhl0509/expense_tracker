@@ -120,7 +120,16 @@ export const deleteTransaction = (id: number) =>
   req<{ message: string }>(`/transaction/delete/${id}`, { method: 'DELETE' });
 
 export const resetData = () =>
-  req<{ message: string }>('/transaction/reset', { method: 'POST' });
+  req<{ message: string; deleted: number }>('/transaction/reset', { method: 'POST' });
+
+// 초기화는 삭제가 아니라 아카이브다. 미복원 배치를 되돌릴 수 있다.
+export type ResetBatch = { id: number; tx_count: number; created_at: string };
+
+export const getResetBatches = () =>
+  req<{ batches: ResetBatch[] }>('/transaction/reset-batches');
+
+export const restoreResetBatch = (id: number) =>
+  req<{ message: string; restored: number }>(`/transaction/reset-batches/${id}/restore`, { method: 'POST' });
 
 export const exportCsv = () =>
   fetch(`${API_BASE}/transaction/export`, { credentials: 'include' });
@@ -172,6 +181,7 @@ export const processRecurring = () =>
 // ── 카드 연동(사용자별 Gmail IMAP) ────────────────────────────────────
 export type CardCredentialStatus = {
   configured: boolean;
+  imap_user: string | null;
   imap_user_masked: string | null;
   has_woori: boolean;
 };
@@ -223,13 +233,23 @@ export const revokeIntegrationToken = (id: number) =>
   req<{ message: string }>(`/integration/tokens/${id}/revoke`, { method: 'POST' });
 
 // ── AI ────────────────────────────────────────────────────────────────
-export const streamAgent = (message: string): Promise<Response> =>
-  fetch(`${API_BASE}/ai/agent`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+// BYOK: 사용자별 AI API 키. 서버는 힌트(앞뒤 일부)만 돌려주고 전체 키는 저장 후 표시하지 않는다.
+export type AiCredential = {
+  configured: boolean;
+  provider: string | null;
+  key_hint: string | null;
+};
+
+export const getAiCredential = () => req<AiCredential>('/ai/credentials');
+
+export const saveAiCredential = (provider: string, apiKey: string) =>
+  req<{ message: string; configured: boolean; provider: string }>('/ai/credentials', {
+    method: 'PUT',
+    body: JSON.stringify({ provider, api_key: apiKey }),
   });
+
+export const deleteAiCredential = () =>
+  req<{ message: string; configured: boolean }>('/ai/credentials', { method: 'DELETE' });
 
 /** text/plain 스트림을 onChunk로 흘려보낸다. (AI analyze/chat 공용) */
 export async function streamText(

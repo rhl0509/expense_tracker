@@ -49,6 +49,10 @@ def _login_blocked(key) -> bool:
     with _login_lock:
         hits = _login_fails[key]
         hits[:] = [t for t in hits if t > now - _LOGIN_WINDOW]
+        if not hits:
+            # 빈 리스트 키가 무한 누적되지 않게 제거(무인증 임의 user_id 로 메모리 성장 방지).
+            del _login_fails[key]
+            return False
         return len(hits) >= _LOGIN_MAX
 
 

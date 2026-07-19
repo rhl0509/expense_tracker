@@ -90,4 +90,6 @@ async def root():
 if __name__ == '__main__':
     import uvicorn
     port = int(os.getenv('PORT', '5000'))
-    uvicorn.run("app:app", host="127.0.0.1", port=port, reload=False)
+    # 컨테이너·배포에선 BIND_HOST=0.0.0.0. 기본은 로컬 전용(127.0.0.1).
+    host = os.getenv('BIND_HOST', '127.0.0.1')
+    uvicorn.run("app:app", host=host, port=port, reload=False)

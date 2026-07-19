@@ -173,6 +173,7 @@ async def list_invites(request: Request, _=Depends(api_require_login)):
             if not is_book_member(cursor, book_id, member_id):
                 return JSONResponse({"error": "해당 가구의 멤버가 아닙니다."}, status_code=403)
             # 기한이 지난 pending 초대는 조회 시점에 expired로 표시한다(GET은 쓰기하지 않음).
+            owner = is_book_owner(cursor, book_id, member_id)
             cursor.execute(
                 """SELECT i.id, i.token,
                           CASE WHEN i.status = 'pending' AND i.expires_at IS NOT NULL AND i.expires_at < NOW()
@@ -185,9 +186,15 @@ async def list_invites(request: Request, _=Depends(api_require_login)):
                    ORDER BY i.created_at DESC""",
                 (book_id,),
             )
-            return {"invites": cursor.fetchall()}
+            rows = cursor.fetchall()
     finally:
         conn.close()
+    # 초대 토큰은 그 자체로 가입 자격증명이다. owner 만 목록에서 다시 볼 수 있고, 일반 멤버
+    # 응답에선 제거한다(비-owner 가 owner 의 미사용 초대를 제3자에게 유출하는 것 방지).
+    if not owner:
+        for r in rows:
+            r.pop("token", None)
+    return {"invites": rows}
 
 
 @router.post("/invites/accept")

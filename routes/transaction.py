@@ -591,12 +591,102 @@ async def reset_data(request: Request, _=Depends(api_require_login)):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # 가구 전체 거래를 삭제하는 파괴적 작업 → 가구장(owner)만 허용
+            # 가구 전체 거래를 비우는 파괴적 작업 → 가구장(owner)만 허용
             if not is_book_owner(cursor, account_book_id, user_no):
                 return JSONResponse({"error": "가구장만 데이터를 초기화할 수 있습니다."}, status_code=403)
+            # 영구 삭제가 아니라 아카이브로 옮긴다(마이페이지에서 되돌릴 수 있게).
+            # 거래가 없으면 빈 배치를 만들지 않는다.
+            cursor.execute("SELECT COUNT(*) AS c FROM transactions WHERE account_book_id = %s", (account_book_id,))
+            count = cursor.fetchone()['c']
+            if count == 0:
+                return {"message": "reset", "deleted": 0}
+            cursor.execute(
+                "INSERT INTO reset_batches (account_book_id, member_id, tx_count) VALUES (%s, %s, %s)",
+                (account_book_id, user_no, count)
+            )
+            batch_id = cursor.lastrowid
+            cursor.execute(
+                """INSERT INTO transactions_archive
+                       (batch_id, original_id, account_book_id, category_id, member_id, type, amount,
+                        title, memo, transaction_date, payment_method, created_at, updated_at, user)
+                   SELECT %s, id, account_book_id, category_id, member_id, type, amount,
+                          title, memo, transaction_date, payment_method, created_at, updated_at, user
+                   FROM transactions WHERE account_book_id = %s""",
+                (batch_id, account_book_id)
+            )
             cursor.execute("DELETE FROM transactions WHERE account_book_id = %s", (account_book_id,))
         conn.commit()
-        return {"message": "reset", "deleted": cursor.rowcount}
+        return {"message": "reset", "deleted": count, "batch_id": batch_id}
+    except Exception:
+        conn.rollback()
+        logger.exception("데이터 초기화 실패")
+        return JSONResponse({"error": "서버 내부 오류가 발생했습니다."}, status_code=500)
+    finally:
+        conn.close()
+
+
+@router.get('/reset-batches')
+async def list_reset_batches(request: Request, _=Depends(api_require_login)):
+    """복원 가능한(미복원) 초기화 이력. 마이페이지 '되돌리기' 목록."""
+    account_book_id = get_account_book_id(request)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT id, tx_count, created_at FROM reset_batches
+                   WHERE account_book_id = %s AND restored_at IS NULL
+                   ORDER BY id DESC""",
+                (account_book_id,)
+            )
+            rows = cursor.fetchall()
+            for r in rows:
+                if isinstance(r.get('created_at'), (datetime, date)):
+                    r['created_at'] = r['created_at'].strftime('%Y-%m-%d %H:%M')
+            return {"batches": rows}
+    finally:
+        conn.close()
+
+
+@router.post('/reset-batches/{batch_id}/restore')
+async def restore_reset_batch(batch_id: int, request: Request, _=Depends(api_require_login)):
+    """아카이브된 배치를 현재 장부로 되돌린다. 가구장만."""
+    user_no = get_user_no(request)
+    account_book_id = get_account_book_id(request)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if not is_book_owner(cursor, account_book_id, user_no):
+                return JSONResponse({"error": "가구장만 복원할 수 있습니다."}, status_code=403)
+            # 이 가구 소유 + 미복원 배치인지 확인(IDOR·중복 복원 방지)
+            cursor.execute(
+                "SELECT id FROM reset_batches WHERE id = %s AND account_book_id = %s AND restored_at IS NULL",
+                (batch_id, account_book_id)
+            )
+            if cursor.fetchone() is None:
+                return JSONResponse({"error": "복원할 수 없는 초기화 이력입니다."}, status_code=404)
+            # 원본 카테고리·작성자가 그새 삭제됐을 수 있다(아카이브엔 FK 없음). transactions 는
+            # FK 가 있으므로, 없는 category_id 는 NULL 로, 없는 member_id 는 복원 실행자로 대체한다.
+            cursor.execute(
+                """INSERT INTO transactions
+                       (account_book_id, category_id, member_id, type, amount, title, memo,
+                        transaction_date, payment_method, created_at, updated_at, user)
+                   SELECT ta.account_book_id,
+                          (SELECT c.id FROM categories c WHERE c.id = ta.category_id),
+                          COALESCE((SELECT m.id FROM members m WHERE m.id = ta.member_id), %s),
+                          ta.type, ta.amount, ta.title, ta.memo, ta.transaction_date,
+                          ta.payment_method, ta.created_at, ta.updated_at, ta.user
+                   FROM transactions_archive ta WHERE ta.batch_id = %s""",
+                (user_no, batch_id)
+            )
+            restored = cursor.rowcount
+            cursor.execute("DELETE FROM transactions_archive WHERE batch_id = %s", (batch_id,))
+            cursor.execute("UPDATE reset_batches SET restored_at = NOW() WHERE id = %s", (batch_id,))
+        conn.commit()
+        return {"message": "restored", "restored": restored}
+    except Exception:
+        conn.rollback()
+        logger.exception("초기화 복원 실패")
+        return JSONResponse({"error": "서버 내부 오류가 발생했습니다."}, status_code=500)
     finally:
         conn.close()
 

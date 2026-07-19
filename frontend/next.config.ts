@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const BACKEND = process.env.BACKEND_URL || "http://127.0.0.1:5000";
 
 const nextConfig: NextConfig = {
+  // 배포: 최소 런타임만 담은 standalone 서버로 빌드. dev 에는 영향 없다.
+  output: "standalone",
   allowedDevOrigins: [
     "127.0.0.1",
     // DHCP로 마지막 옥텟이 바뀌어도 안 깨지게 대역으로 둔다.
@@ -18,6 +20,7 @@ const nextConfig: NextConfig = {
       { source: "/auth/:path*", destination: `${BACKEND}/auth/:path*` },
       { source: "/transaction/:path*", destination: `${BACKEND}/transaction/:path*` },
       { source: "/ai/:path*", destination: `${BACKEND}/ai/:path*` },
+      { source: "/integration/:path*", destination: `${BACKEND}/integration/:path*` },
       { source: "/health", destination: `${BACKEND}/health` },
     ];
   },

@@ -1,29 +1,158 @@
-import json
+import base64
 import logging
 import time
 from collections import defaultdict
 from threading import Lock
 
 import anthropic
+from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from config import Config
 from database.db_connection import get_db_connection
-from routes.utils import get_account_book_id, get_user_no, api_require_login
-from datetime import datetime
+from routes.utils import get_user_no, api_require_login
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# ANTHROPIC_API_KEY 는 선택 설정(config.py)이므로 import 시점이 아니라 첫 사용 시 생성한다.
-_client = None
+# BYOK: AI 키는 서버 공용이 아니라 사용자별로 DB에 암호화 저장한다. 요청마다 그 사용자의
+# 키를 복호화해 클라이언트를 만든다. provider 별 SDK 차이는 _stream_completion 이 흡수한다.
+_SUPPORTED_PROVIDERS = ("anthropic", "openai", "gemini")
+
+_MODELS = {
+    "anthropic": "claude-sonnet-4-6",
+    "openai": "gpt-4o",
+    "gemini": "gemini-2.0-flash",
+}
+_MAX_OUTPUT_TOKENS = 8000
 
 
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
-    return _client
+def _stream_completion(provider, api_key, system, messages):
+    """provider 별 텍스트 스트리밍 제너레이터. 입력은 공통 형식(system 문자열 +
+    messages=[{role: user/assistant, content}]) 이고, SDK 마다 다른 system 위치·role 이름·
+    청크 구조를 여기서 흡수한다. SDK 는 실제로 쓸 때만 import 한다."""
+    model = _MODELS[provider]
+    if provider == "anthropic":
+        client = anthropic.Anthropic(api_key=api_key)
+        with client.messages.stream(model=model, max_tokens=_MAX_OUTPUT_TOKENS,
+                                    system=system, messages=messages) as stream:
+            yield from stream.text_stream
+    elif provider == "openai":
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        # OpenAI 는 system 을 messages[0] 에 role='system' 으로 넣는다.
+        stream = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system}, *messages],
+            max_tokens=_MAX_OUTPUT_TOKENS,
+            stream=True,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+    elif provider == "gemini":
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=api_key)
+        # Gemini 는 assistant 를 'model' 로 부르고, system 은 config 로 분리한다.
+        contents = [
+            types.Content(role=("model" if m["role"] == "assistant" else "user"),
+                          parts=[types.Part(text=m["content"])])
+            for m in messages
+        ]
+        stream = client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=_MAX_OUTPUT_TOKENS,
+            ),
+        )
+        for chunk in stream:
+            if chunk.text:
+                yield chunk.text
+    else:
+        raise ValueError(f"지원하지 않는 프로바이더: {provider}")
+
+
+# 카드 자격증명과 같은 메커니즘(cryptography.Fernet)이되, 별도 시크릿(AI_ENC_KEY)이 있으면
+# 그것을, 없으면 SECRET_KEY 에서 HKDF 로 도메인 분리해 파생한다. 암호화 키를 교체하면 기존
+# 암호문은 복호화 불가 → 사용자가 재입력해야 한다.
+def _fernet() -> Fernet:
+    base = Config.AI_ENC_KEY or Config.SECRET_KEY
+    raw = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"expense_tracker/ai-credentials",
+        info=b"member_ai_credentials fernet key v1",
+    ).derive(base.encode("utf-8"))
+    return Fernet(base64.urlsafe_b64encode(raw))
+
+
+def _encrypt(plain: str) -> bytes:
+    return _fernet().encrypt(plain.encode("utf-8"))
+
+
+def _decrypt(token) -> str | None:
+    try:
+        return _fernet().decrypt(bytes(token)).decode("utf-8")
+    except (InvalidToken, TypeError, ValueError):
+        return None
+
+
+def _load_ai_credential(member_id):
+    """(provider, api_key) 튜플 또는 None. 복호화 실패(키 교체 등)도 None."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT provider, api_key_enc FROM member_ai_credentials WHERE member_id = %s",
+                (member_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    key = _decrypt(row["api_key_enc"])
+    if key is None:
+        return None
+    return row["provider"], key
+
+
+def _mask_key(key: str) -> str:
+    """저장된 키를 화면에 힌트로만 보여준다(앞 5자 + 뒤 4자)."""
+    if len(key) <= 12:
+        return "****"
+    return f"{key[:5]}…{key[-4:]}"
+
+
+def _validate_key(provider: str, api_key: str) -> tuple[bool, str | None]:
+    """저장 전에 실제로 키가 유효한지 확인한다. 모델 목록 조회(토큰 비용 없음)로 인증만 검사.
+    provider 마다 예외 타입이 달라, 메시지 문자열로 인증 실패와 그 외를 구분한다."""
+    try:
+        if provider == "anthropic":
+            anthropic.Anthropic(api_key=api_key).models.list(limit=1)
+        elif provider == "openai":
+            from openai import OpenAI
+            OpenAI(api_key=api_key).models.list()
+        elif provider == "gemini":
+            from google import genai
+            # list() 는 지연 이터레이터라 한 건 소비해야 실제 인증 호출이 나간다.
+            next(iter(genai.Client(api_key=api_key).models.list()), None)
+        else:
+            return False, "지원하지 않는 프로바이더입니다."
+        return True, None
+    except Exception as e:
+        msg = str(e).lower()
+        if any(k in msg for k in ("auth", "api key", "api_key", "401", "invalid", "permission", "unauthenticated")):
+            return False, "API 키가 유효하지 않습니다. 키를 다시 확인하세요."
+        logger.exception("AI 키 검증 중 오류 (provider=%s)", provider)
+        return False, "키를 검증하지 못했습니다. 잠시 후 다시 시도해 주세요."
 
 # ── AI 호출 rate limit (유저별 슬라이딩 윈도우, 프로세스 로컬) ──
 _RATE_LIMIT = 20      # 윈도우당 최대 요청 수
@@ -49,7 +178,6 @@ def _rate_limited(user_no) -> bool:
 _MAX_CHAT_MESSAGES = 40     # 대화 턴 상한
 _MAX_MESSAGE_CHARS = 8000   # 메시지 1건 길이 상한
 _MAX_TOTAL_CHARS = 24000    # 전체 길이 상한
-_MAX_AGENT_ITERATIONS = 8   # /ai/agent 도구 호출 루프 상한
 
 
 def _sanitize_chat_messages(raw):
@@ -84,124 +212,17 @@ SYSTEM_PROMPT = """당신은 가계부 분석 전문 AI 어시스턴트입니다
 사용자의 수입/지출 데이터를 분석하고 유용한 재무 인사이트를 제공합니다.
 한국어로 친근하고 명확하게 답변하세요. 금액은 원 단위로 표시하세요."""
 
-TOOLS = [
-    {
-        "name": "get_monthly_summary",
-        "description": "특정 월의 수입/지출 합계와 상세 내역을 조회합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "year":  {"type": "integer", "description": "연도 (예: 2025)"},
-                "month": {"type": "integer", "description": "월 (1~12)"}
-            },
-            "required": ["year", "month"],
-            "additionalProperties": False
-        }
-    },
-    {
-        "name": "get_category_breakdown",
-        "description": "특정 월의 카테고리별 지출 합계를 조회합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "year":  {"type": "integer"},
-                "month": {"type": "integer"}
-            },
-            "required": ["year", "month"],
-            "additionalProperties": False
-        }
-    },
-    {
-        "name": "get_spending_trend",
-        "description": "최근 N개월의 월별 수입/지출 추이를 조회합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "months": {"type": "integer", "description": "조회할 개월 수 (기본 3, 최대 12)"}
-            },
-            "additionalProperties": False
-        }
-    }
-]
-
-
-def _run_get_monthly_summary(account_book_id, year, month):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT type, SUM(amount) AS total, COUNT(*) AS cnt
-                FROM transactions
-                WHERE account_book_id = %s AND YEAR(transaction_date) = %s AND MONTH(transaction_date) = %s
-                GROUP BY type
-            """, (account_book_id, year, month))
-            summary = cur.fetchall()
-            cur.execute("""
-                SELECT title, amount, type, transaction_date, memo
-                FROM transactions
-                WHERE account_book_id = %s AND YEAR(transaction_date) = %s AND MONTH(transaction_date) = %s
-                ORDER BY transaction_date DESC LIMIT 20
-            """, (account_book_id, year, month))
-            details = cur.fetchall()
-        return {"summary": summary, "recent_transactions": details}
-    finally:
-        conn.close()
-
-
-def _run_get_category_breakdown(account_book_id, year, month):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT c.name AS category, SUM(t.amount) AS total, COUNT(*) AS cnt
-                FROM transactions t
-                LEFT JOIN categories c ON t.category_id = c.id
-                WHERE t.account_book_id = %s AND t.type = 'expense'
-                  AND YEAR(t.transaction_date) = %s AND MONTH(t.transaction_date) = %s
-                GROUP BY c.name ORDER BY total DESC
-            """, (account_book_id, year, month))
-            return {"categories": cur.fetchall()}
-    finally:
-        conn.close()
-
-
-def _run_get_spending_trend(account_book_id, months=3):
-    months = min(max(months, 1), 12)
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT YEAR(transaction_date) AS year, MONTH(transaction_date) AS month,
-                       type, SUM(amount) AS total
-                FROM transactions
-                WHERE account_book_id = %s AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL %s MONTH)
-                GROUP BY year, month, type ORDER BY year, month
-            """, (account_book_id, months))
-            return {"trend": cur.fetchall()}
-    finally:
-        conn.close()
-
-
-def _execute_tool(tool_name, tool_input, account_book_id):
-    try:
-        if tool_name == "get_monthly_summary":
-            result = _run_get_monthly_summary(account_book_id, tool_input["year"], tool_input["month"])
-        elif tool_name == "get_category_breakdown":
-            result = _run_get_category_breakdown(account_book_id, tool_input["year"], tool_input["month"])
-        elif tool_name == "get_spending_trend":
-            result = _run_get_spending_trend(account_book_id, tool_input.get("months", 3))
-        else:
-            result = {"error": f"알 수 없는 도구: {tool_name}"}
-    except Exception as e:
-        logger.exception("AI 도구 실행 실패: %s", tool_name)
-        result = {"error": "도구 실행 중 오류가 발생했습니다."}
-    return json.dumps(result, ensure_ascii=False, default=str)
-
-
 @router.post('/ai/analyze')
 async def analyze(request: Request, _=Depends(api_require_login)):
-    if _rate_limited(get_user_no(request)):
+    user_no = get_user_no(request)
+    if _rate_limited(user_no):
         return JSONResponse({"error": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429)
+    cred = _load_ai_credential(user_no)
+    if not cred:
+        return JSONResponse({"error": "AI 기능을 쓰려면 마이페이지에서 API 키를 먼저 등록하세요."}, status_code=400)
+    provider, api_key = cred
+    if provider not in _SUPPORTED_PROVIDERS:
+        return JSONResponse({"error": "지원하지 않는 프로바이더입니다."}, status_code=400)
     data   = await request.json()
     prompt = (data.get('prompt') or '').strip()
     if not prompt:
@@ -211,25 +232,26 @@ async def analyze(request: Request, _=Depends(api_require_login)):
 
     def generate():
         try:
-            with _get_client().messages.stream(model="claude-sonnet-4-6", max_tokens=8000, system=SYSTEM_PROMPT,
-                                        messages=[{"role": "user", "content": prompt}]) as stream:
-                for text in stream.text_stream:
-                    yield text
-        except anthropic.AuthenticationError:
-            yield "[오류] API 키가 유효하지 않습니다."
-        except anthropic.RateLimitError:
-            yield "[오류] API 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."
-        except Exception as e:
-            logger.exception("AI 분석 스트리밍 실패")
-            yield "[오류] 처리 중 오류가 발생했습니다."
+            yield from _stream_completion(provider, api_key, SYSTEM_PROMPT,
+                                          [{"role": "user", "content": prompt}])
+        except Exception:
+            logger.exception("AI 분석 스트리밍 실패 (provider=%s)", provider)
+            yield "[오류] 처리 중 오류가 발생했습니다. API 키·잔액을 확인해 주세요."
 
     return StreamingResponse(generate(), media_type='text/plain; charset=utf-8')
 
 
 @router.post('/ai/chat')
 async def chat(request: Request, _=Depends(api_require_login)):
-    if _rate_limited(get_user_no(request)):
+    user_no = get_user_no(request)
+    if _rate_limited(user_no):
         return JSONResponse({"error": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429)
+    cred = _load_ai_credential(user_no)
+    if not cred:
+        return JSONResponse({"error": "AI 기능을 쓰려면 마이페이지에서 API 키를 먼저 등록하세요."}, status_code=400)
+    provider, api_key = cred
+    if provider not in _SUPPORTED_PROVIDERS:
+        return JSONResponse({"error": "지원하지 않는 프로바이더입니다."}, status_code=400)
     data = await request.json()
     messages, err = _sanitize_chat_messages(data.get('messages'))
     if err:
@@ -247,72 +269,68 @@ async def chat(request: Request, _=Depends(api_require_login)):
 
     def generate():
         try:
-            with _get_client().messages.stream(model="claude-sonnet-4-6", max_tokens=8000,
-                                        system=system_prompt, messages=messages) as stream:
-                for text in stream.text_stream:
-                    yield text
-        except anthropic.AuthenticationError:
-            yield "[오류] API 키가 유효하지 않습니다."
-        except anthropic.RateLimitError:
-            yield "[오류] API 요청 한도를 초과했습니다."
-        except Exception as e:
-            logger.exception("AI 채팅 스트리밍 실패")
-            yield "[오류] 처리 중 오류가 발생했습니다."
+            yield from _stream_completion(provider, api_key, system_prompt, messages)
+        except Exception:
+            logger.exception("AI 채팅 스트리밍 실패 (provider=%s)", provider)
+            yield "[오류] 처리 중 오류가 발생했습니다. API 키·잔액을 확인해 주세요."
 
     return StreamingResponse(generate(), media_type='text/plain; charset=utf-8')
 
 
-@router.post('/ai/agent')
-async def agent(request: Request, _=Depends(api_require_login)):
-    if _rate_limited(get_user_no(request)):
-        return JSONResponse({"error": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429)
-    data         = await request.json()
-    user_message = (data.get('message') or '').strip()
-    if not user_message:
-        return JSONResponse({"error": "message가 없습니다."}, status_code=400)
-    if len(user_message) > _MAX_MESSAGE_CHARS:
-        return JSONResponse({"error": "요청이 너무 깁니다."}, status_code=400)
+# ── BYOK: 사용자별 AI 키 관리 (마이페이지) ──────────────────────────────
+@router.get('/ai/credentials')
+async def get_ai_credentials(request: Request, _=Depends(api_require_login)):
+    cred = _load_ai_credential(get_user_no(request))
+    if not cred:
+        return {"configured": False, "provider": None, "key_hint": None}
+    provider, api_key = cred
+    return {"configured": True, "provider": provider, "key_hint": _mask_key(api_key)}
 
-    account_book_id = get_account_book_id(request)
-    now = datetime.now()
-    system = f"""{SYSTEM_PROMPT}
-오늘 날짜: {now.strftime('%Y년 %m월 %d일')}
-필요하면 도구를 사용해 실제 데이터를 조회한 뒤 답변하세요."""
-    # system 블록에 캐시 breakpoint를 걸면 렌더 순서(tools→system)상 tools까지 함께 캐시되어
-    # 에이전트 루프의 매 iteration에서 정적 prefix 재전송 비용을 줄인다.
-    system_blocks = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
-    messages = [{"role": "user", "content": user_message}]
 
-    def generate():
-        try:
-            # 도구 호출 루프 상한: 무한 루프·비용 폭주 방지
-            for _iteration in range(_MAX_AGENT_ITERATIONS):
-                with _get_client().messages.stream(model="claude-sonnet-4-6", max_tokens=8000,
-                                            system=system_blocks, tools=TOOLS, messages=messages) as stream:
-                    for text in stream.text_stream:
-                        yield text
-                    response = stream.get_final_message()
+@router.put('/ai/credentials')
+async def save_ai_credentials(request: Request, _=Depends(api_require_login)):
+    data = await request.json()
+    provider = (data.get('provider') or 'anthropic').strip()
+    api_key = (data.get('api_key') or '').strip()
+    if provider not in _SUPPORTED_PROVIDERS:
+        return JSONResponse({"error": "지원하지 않는 프로바이더입니다."}, status_code=400)
+    if not api_key or len(api_key) > 500:
+        return JSONResponse({"error": "API 키를 확인하세요."}, status_code=400)
 
-                tool_uses = [b for b in response.content if b.type == "tool_use"]
-                if not tool_uses:
-                    break
+    # 저장하기 전에 실제로 유효한 키인지 확인한다(카드 자격증명과 같은 원칙) — 형식만 보면
+    # "저장됨"이라 해놓고 정작 AI 호출이 조용히 실패한다. 외부 호출이라 스레드풀로 오프로드.
+    ok, err = await run_in_threadpool(_validate_key, provider, api_key)
+    if not ok:
+        return JSONResponse({"error": err}, status_code=400)
 
-                messages.append({"role": "assistant", "content": response.content})
-                tool_results = []
-                for tu in tool_uses:
-                    yield f"\n[🔍 {tu.name} 조회 중...]\n"
-                    result_str = _execute_tool(tu.name, tu.input, account_book_id)
-                    tool_results.append({"type": "tool_result", "tool_use_id": tu.id, "content": result_str})
-                messages.append({"role": "user", "content": tool_results})
-            else:
-                yield "\n[안내] 도구 호출 한도에 도달해 응답을 마칩니다."
+    key_enc = _encrypt(api_key)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO member_ai_credentials (member_id, provider, api_key_enc)
+                   VALUES (%s, %s, %s)
+                   ON DUPLICATE KEY UPDATE
+                     provider = VALUES(provider),
+                     api_key_enc = VALUES(api_key_enc)""",
+                (get_user_no(request), provider, key_enc),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"message": "저장되었습니다.", "configured": True, "provider": provider}
 
-        except anthropic.AuthenticationError:
-            yield "[오류] API 키가 유효하지 않습니다."
-        except anthropic.RateLimitError:
-            yield "[오류] API 요청 한도를 초과했습니다."
-        except Exception as e:
-            logger.exception("AI 에이전트 스트리밍 실패")
-            yield "[오류] 처리 중 오류가 발생했습니다."
 
-    return StreamingResponse(generate(), media_type='text/plain; charset=utf-8')
+@router.delete('/ai/credentials')
+async def delete_ai_credentials(request: Request, _=Depends(api_require_login)):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM member_ai_credentials WHERE member_id = %s",
+                (get_user_no(request),),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"message": "삭제되었습니다.", "configured": False}

@@ -260,6 +260,38 @@ def test_reset(client, cat_id):
     assert all(t["title"] not in ("리셋대상", "pytest 수입") for t in data)
 
 
+def test_reset_archive_and_restore(client, cat_id):
+    # 초기화가 영구삭제가 아니라 아카이브이고, 되돌리면 복원되는지 왕복 검증.
+    client.post("/transaction/add", json={"type": "expense", "category_id": cat_id, "amount": 1500, "description": "복원대상A", "date": "2026-06-02"})
+    client.post("/transaction/add", json={"type": "income", "category_id": cat_id, "amount": 2500, "description": "복원대상B", "date": "2026-06-03"})
+
+    r = client.post("/transaction/reset")
+    assert r.status_code == 200
+    assert r.json()["deleted"] >= 2
+
+    # 화면(활성 거래)에서는 비워졌다
+    data = client.get("/transaction/data").json()
+    assert all(t["title"] not in ("복원대상A", "복원대상B") for t in data)
+
+    # 복원 가능한 배치가 생겼다(최신이 방금 초기화)
+    batches = client.get("/transaction/reset-batches").json()["batches"]
+    assert len(batches) >= 1
+    batch = batches[0]
+    assert batch["tx_count"] >= 2
+
+    # 되돌리면 거래가 돌아온다
+    r = client.post(f"/transaction/reset-batches/{batch['id']}/restore")
+    assert r.status_code == 200
+    titles = [t["title"] for t in client.get("/transaction/data").json()]
+    assert "복원대상A" in titles and "복원대상B" in titles
+
+    # 복원된 배치는 미복원 목록에서 사라지고, 재복원은 404
+    batches2 = client.get("/transaction/reset-batches").json()["batches"]
+    assert all(b["id"] != batch["id"] for b in batches2)
+    r = client.post(f"/transaction/reset-batches/{batch['id']}/restore")
+    assert r.status_code == 404
+
+
 # ──────────────────────────────────────────────────────────────────
 # 멀티 가구 격리 / 초대 흐름
 # ──────────────────────────────────────────────────────────────────
