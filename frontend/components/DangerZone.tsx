@@ -20,10 +20,15 @@ export default function DangerZone() {
 
   const resetMut = useMutation({
     mutationFn: resetData,
-    onSuccess: () => {
+    onSuccess: (r) => {
       setConfirming(false);
       // 거래 목록 등 전체 무효화(되돌리기 이력도 함께 갱신된다).
       qc.invalidateQueries();
+      // 지울 거래가 없으면 배치도 안 만들어진다 — "되돌릴 수 있다"고 오도하지 않는다.
+      if (r.deleted === 0) {
+        toast('초기화할 거래가 없습니다.', 'warning');
+        return;
+      }
       toast('데이터가 초기화되었습니다. 마이페이지에서 되돌릴 수 있습니다.', 'success');
       router.push('/dashboard');
     },

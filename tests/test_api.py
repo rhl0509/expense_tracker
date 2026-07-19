@@ -265,6 +265,10 @@ def test_reset_archive_and_restore(client, cat_id):
     client.post("/transaction/add", json={"type": "expense", "category_id": cat_id, "amount": 1500, "description": "복원대상A", "date": "2026-06-02"})
     client.post("/transaction/add", json={"type": "income", "category_id": cat_id, "amount": 2500, "description": "복원대상B", "date": "2026-06-03"})
 
+    # reset 직전 원본 스냅샷(금융 필드까지). 복원이 컬럼 매핑을 뒤섞으면(금액↔날짜 등)
+    # title 만 보는 검증은 통과시키므로, 금융 필드 불변식을 별도로 단언한다.
+    before = {t["title"]: t for t in client.get("/transaction/data").json()}
+
     r = client.post("/transaction/reset")
     assert r.status_code == 200
     assert r.json()["deleted"] >= 2
@@ -282,8 +286,12 @@ def test_reset_archive_and_restore(client, cat_id):
     # 되돌리면 거래가 돌아온다
     r = client.post(f"/transaction/reset-batches/{batch['id']}/restore")
     assert r.status_code == 200
-    titles = [t["title"] for t in client.get("/transaction/data").json()]
-    assert "복원대상A" in titles and "복원대상B" in titles
+    after = {t["title"]: t for t in client.get("/transaction/data").json()}
+    assert "복원대상A" in after and "복원대상B" in after
+    # 금융 필드가 왕복에서 그대로 보존됐는지(컬럼 매핑 회귀 방지)
+    for title in ("복원대상A", "복원대상B"):
+        for field in ("amount", "type", "transaction_date", "category_name"):
+            assert after[title][field] == before[title][field], f"{title}.{field} 불일치"
 
     # 복원된 배치는 미복원 목록에서 사라지고, 재복원은 404
     batches2 = client.get("/transaction/reset-batches").json()["batches"]

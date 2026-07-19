@@ -597,12 +597,11 @@ async def reset_data(request: Request, _=Depends(api_require_login)):
             # 영구 삭제가 아니라 아카이브로 옮긴다(마이페이지에서 되돌릴 수 있게).
             # 거래가 없으면 빈 배치를 만들지 않는다.
             cursor.execute("SELECT COUNT(*) AS c FROM transactions WHERE account_book_id = %s", (account_book_id,))
-            count = cursor.fetchone()['c']
-            if count == 0:
+            if cursor.fetchone()['c'] == 0:
                 return {"message": "reset", "deleted": 0}
             cursor.execute(
-                "INSERT INTO reset_batches (account_book_id, member_id, tx_count) VALUES (%s, %s, %s)",
-                (account_book_id, user_no, count)
+                "INSERT INTO reset_batches (account_book_id, member_id, tx_count) VALUES (%s, %s, 0)",
+                (account_book_id, user_no)
             )
             batch_id = cursor.lastrowid
             cursor.execute(
@@ -614,9 +613,16 @@ async def reset_data(request: Request, _=Depends(api_require_login)):
                    FROM transactions WHERE account_book_id = %s""",
                 (batch_id, account_book_id)
             )
-            cursor.execute("DELETE FROM transactions WHERE account_book_id = %s", (account_book_id,))
+            archived = cursor.rowcount
+            # 방금 이 배치로 아카이브한 행만 삭제한다. WHERE account_book_id 로 통삭제하면
+            # 아카이브 스냅샷 이후 다른 멤버가 추가한 거래까지 지워 조용한 손실이 난다(동시성).
+            cursor.execute(
+                "DELETE t FROM transactions t JOIN transactions_archive a ON a.original_id = t.id WHERE a.batch_id = %s",
+                (batch_id,)
+            )
+            cursor.execute("UPDATE reset_batches SET tx_count = %s WHERE id = %s", (archived, batch_id))
         conn.commit()
-        return {"message": "reset", "deleted": count, "batch_id": batch_id}
+        return {"message": "reset", "deleted": archived, "batch_id": batch_id}
     except Exception:
         conn.rollback()
         logger.exception("데이터 초기화 실패")
@@ -628,10 +634,14 @@ async def reset_data(request: Request, _=Depends(api_require_login)):
 @router.get('/reset-batches')
 async def list_reset_batches(request: Request, _=Depends(api_require_login)):
     """복원 가능한(미복원) 초기화 이력. 마이페이지 '되돌리기' 목록."""
+    user_no = get_user_no(request)
     account_book_id = get_account_book_id(request)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # 초기화·복원은 가구장만 가능하므로 목록도 가구장에게만 보인다(멤버에겐 빈 목록).
+            if not is_book_owner(cursor, account_book_id, user_no):
+                return {"batches": []}
             cursor.execute(
                 """SELECT id, tx_count, created_at FROM reset_batches
                    WHERE account_book_id = %s AND restored_at IS NULL
@@ -657,12 +667,15 @@ async def restore_reset_batch(batch_id: int, request: Request, _=Depends(api_req
         with conn.cursor() as cursor:
             if not is_book_owner(cursor, account_book_id, user_no):
                 return JSONResponse({"error": "가구장만 복원할 수 있습니다."}, status_code=403)
-            # 이 가구 소유 + 미복원 배치인지 확인(IDOR·중복 복원 방지)
+            # 배치를 원자적으로 선점한다: 이 가구 소유 + 미복원일 때만 restored 로 마킹하고
+            # 정확히 1행을 잡았을 때만 복원을 진행한다. 검사와 마킹을 한 문장으로 합쳐,
+            # 더블클릭·동시요청이 restored_at IS NULL 을 둘 다 통과해 거래가 이중 복원(원장
+            # 금액 중복)되는 TOCTOU 창을 없앤다.
             cursor.execute(
-                "SELECT id FROM reset_batches WHERE id = %s AND account_book_id = %s AND restored_at IS NULL",
+                "UPDATE reset_batches SET restored_at = NOW() WHERE id = %s AND account_book_id = %s AND restored_at IS NULL",
                 (batch_id, account_book_id)
             )
-            if cursor.fetchone() is None:
+            if cursor.rowcount != 1:
                 return JSONResponse({"error": "복원할 수 없는 초기화 이력입니다."}, status_code=404)
             # 원본 카테고리·작성자가 그새 삭제됐을 수 있다(아카이브엔 FK 없음). transactions 는
             # FK 가 있으므로, 없는 category_id 는 NULL 로, 없는 member_id 는 복원 실행자로 대체한다.
@@ -680,7 +693,6 @@ async def restore_reset_batch(batch_id: int, request: Request, _=Depends(api_req
             )
             restored = cursor.rowcount
             cursor.execute("DELETE FROM transactions_archive WHERE batch_id = %s", (batch_id,))
-            cursor.execute("UPDATE reset_batches SET restored_at = NOW() WHERE id = %s", (batch_id,))
         conn.commit()
         return {"message": "restored", "restored": restored}
     except Exception:
