@@ -245,8 +245,14 @@ export async function streamText(
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok || !res.body) {
-    throw new Error(`스트림 요청 실패 (${res.status})`);
+  if (!res.ok) {
+    // 백엔드는 429(레이트리밋)·400(키 미등록/미지원 provider)에 {"error":...} 안내를 준다.
+    // req() 와 동일하게 그 메시지를 살려 사용자에게 원인을 보여준다.
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(body.error ?? `스트림 요청 실패 (${res.status})`), { status: res.status });
+  }
+  if (!res.body) {
+    throw new Error('스트림 응답 본문이 없습니다.');
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

@@ -1,3 +1,4 @@
+import calendar
 import csv
 import logging
 from fastapi import APIRouter, Request, Depends
@@ -67,6 +68,10 @@ async def add_transaction(request: Request, _=Depends(api_require_login)):
         return JSONResponse({"error": "메모가 너무 깁니다."}, status_code=400)
     try:
         amount = Decimal(str(data.get('amount')))
+        # Decimal('NaN')/Infinity 는 생성자를 통과한다 — 아래 비교(<, >)에서 InvalidOperation
+        # 이 나 미처리 500 이 되므로 여기서 걸러 400 으로 돌린다.
+        if not amount.is_finite():
+            raise InvalidOperation('NaN/Infinity')
     except (InvalidOperation, TypeError, ValueError):
         return JSONResponse({"error": "금액이 올바르지 않습니다."}, status_code=400)
     if not (0 < amount < Decimal('1000000000000')):
@@ -220,6 +225,13 @@ async def get_categories(request: Request, _=Depends(api_require_login)):
 async def add_category(request: Request, _=Depends(api_require_login)):
     data = await request.json()
     parent_id = data.get('parent_id')
+    name     = (data.get('name') or '').strip()
+    type_val = data.get('type')
+    # 검증 없이 INSERT 하면 name=None/과길이·type ENUM 밖 값이 strict MySQL 에서 미처리 500 이 된다.
+    if not name or len(name) > 50:
+        return JSONResponse({"error": "카테고리 이름이 올바르지 않습니다."}, status_code=400)
+    if type_val not in ('income', 'expense'):
+        return JSONResponse({"error": "type은 income 또는 expense여야 합니다."}, status_code=400)
     account_book_id = get_account_book_id(request)
     conn = get_db_connection()
     try:
@@ -228,10 +240,14 @@ async def add_category(request: Request, _=Depends(api_require_login)):
                 return JSONResponse({"error": "유효하지 않은 상위 카테고리입니다."}, status_code=400)
             cursor.execute(
                 "INSERT INTO categories (account_book_id, name, type, parent_id) VALUES (%s, %s, %s, %s)",
-                (account_book_id, data.get('name'), data.get('type'), parent_id)
+                (account_book_id, name, type_val, parent_id)
             )
         conn.commit()
         return JSONResponse({"message": "추가 성공"}, status_code=201)
+    except Exception:
+        conn.rollback()
+        logger.exception("카테고리 추가 실패")
+        return JSONResponse({"error": "서버 내부 오류가 발생했습니다."}, status_code=500)
     finally:
         conn.close()
 
@@ -279,6 +295,9 @@ async def add_recurring(request: Request, _=Depends(api_require_login)):
     try:
         repeat_day = int(data.get('repeat_day'))
         amount = Decimal(str(data.get('amount')))
+        # Decimal('NaN')/Infinity 는 생성자를 통과하므로 여기서 걸러 미처리 500 을 막는다.
+        if not amount.is_finite():
+            raise InvalidOperation('NaN/Infinity')
     except (InvalidOperation, TypeError, ValueError):
         return JSONResponse({"error": "반복일 또는 금액이 올바르지 않습니다."}, status_code=400)
     if not (1 <= repeat_day <= 31):
@@ -308,15 +327,19 @@ async def process_recurring(request: Request, _=Depends(api_require_login)):
     conn = get_db_connection()
     today = datetime.now()
     current_month_str = today.strftime('%Y-%m-01')
+    last_day = calendar.monthrange(today.year, today.month)[1]
     try:
         with conn.cursor() as cursor:
+            # repeat_day 가 그달 말일보다 크면(예: 2월의 30·31일) 말일로 클램프한다.
+            # 필터와 생성일 모두 LEAST(repeat_day, 말일) 로 맞추지 않으면, 그런 정기결제가
+            # 28·30일짜리 달마다(2·4·6·9·11월) 조용히 자동생성에서 빠진다.
             cursor.execute(
-                "SELECT * FROM recurring_transactions WHERE account_book_id = %s AND repeat_day <= %s AND (last_processed_month IS NULL OR last_processed_month < %s)",
-                (account_book_id, today.day, current_month_str)
+                "SELECT * FROM recurring_transactions WHERE account_book_id = %s AND LEAST(repeat_day, %s) <= %s AND (last_processed_month IS NULL OR last_processed_month < %s)",
+                (account_book_id, last_day, today.day, current_month_str)
             )
             settings = cursor.fetchall()
             for s in settings:
-                reg_date = today.replace(day=s['repeat_day']).strftime('%Y-%m-%d')
+                reg_date = today.replace(day=min(s['repeat_day'], last_day)).strftime('%Y-%m-%d')
                 # payment_method 를 같이 넣는다. 안 넣으면 매달 자동 생성되는 구독료가
                 # "어느 카드로 나갔는지" 없이 쌓여 결제수단별 통계에서 전부 빠진다.
                 cursor.execute(
