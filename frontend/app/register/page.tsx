@@ -51,6 +51,8 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [checkingId, setCheckingId] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [agreePrivacy, setAgreePrivacy] = useState(false);
   // 중복확인을 통과한 아이디 값. 입력이 바뀌면 아래 idVerified가 저절로 풀린다.
   const [checkedId, setCheckedId] = useState('');
   const idVerified = checkedId !== '' && checkedId === form.user_id.trim();
@@ -122,6 +124,10 @@ export default function RegisterPage() {
       setError('이메일을 입력해주세요.');
       return;
     }
+    if (!agreeTerms || !agreePrivacy) {
+      setError('이용약관과 개인정보처리방침에 동의해주세요.');
+      return;
+    }
     setLoading(true);
     try {
       await register({
@@ -130,6 +136,8 @@ export default function RegisterPage() {
         name: form.name,
         email,
         ...(phoneE164 ? { phone: phoneE164 } : {}),
+        terms_agreed: agreeTerms,
+        privacy_agreed: agreePrivacy,
       });
       router.replace('/login');
     } catch (err: unknown) {
@@ -282,6 +290,29 @@ export default function RegisterPage() {
                   onChange={e => set('phone', formatPhone(e.target.value, countryIso))}
                 />
               </div>
+            </div>
+
+            <div style={{ border: '1px solid var(--card-border)', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {([
+                { checked: agreeTerms, toggle: setAgreeTerms, label: '이용약관 동의', href: '/terms' },
+                { checked: agreePrivacy, toggle: setAgreePrivacy, label: '개인정보 수집·이용 동의', href: '/privacy' },
+              ] as const).map(({ checked, toggle, label, href }) => (
+                <div key={href} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={e => toggle(e.target.checked)}
+                      style={{ accentColor: 'var(--accent)', width: 15, height: 15 }}
+                    />
+                    <span>{label} <span style={{ color: 'var(--text-3)' }}>(필수)</span></span>
+                  </label>
+                  {/* 작성 중인 폼이 날아가지 않게 문서는 새 탭으로 연다. */}
+                  <Link href={href} target="_blank" style={{ fontSize: '0.78rem', color: 'var(--accent)', fontWeight: 600, textDecoration: 'none', flexShrink: 0 }}>
+                    보기
+                  </Link>
+                </div>
+              ))}
             </div>
 
             {error && (

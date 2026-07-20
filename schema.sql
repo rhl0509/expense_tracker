@@ -1,4 +1,4 @@
--- schema.sql — 완성 스키마 (migrations 001~010 이 반영된 전체 구조).
+-- schema.sql — 완성 스키마 (migrations 001~011 이 반영된 전체 구조).
 -- 빈 DB(RDS 등)에 이 파일 하나로 스키마를 세운다. 이후 새 마이그레이션만 순차 적용.
 -- 생성 방식: SHOW CREATE TABLE 덤프 (AUTO_INCREMENT 시작값은 제거).
 
@@ -103,6 +103,17 @@ CREATE TABLE `member_ai_credentials` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`member_id`),
   CONSTRAINT `fk_aic_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `member_consents` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `member_id` int unsigned NOT NULL,
+  `doc` varchar(20) COLLATE utf8mb4_general_ci NOT NULL COMMENT 'terms | privacy',
+  `version` varchar(20) COLLATE utf8mb4_general_ci NOT NULL COMMENT '동의한 문서의 시행일(YYYY-MM-DD)',
+  `agreed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_mc_member` (`member_id`),
+  CONSTRAINT `fk_mc_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE `member_email_credentials` (

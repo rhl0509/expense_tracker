@@ -14,6 +14,11 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+# 현재 시행 중인 약관 버전(시행일). 문서를 개정하면 여기와 프론트 페이지(/terms /privacy)를
+# 함께 올린다 — member_consents 에 "어떤 버전에 동의했는지"로 기록된다.
+TERMS_VERSION = '2026-07-20'
+PRIVACY_VERSION = '2026-07-20'
 # E.164: '+' 뒤에 국가번호를 포함해 최대 15자리. 정규화는 프론트가 하고 여기선 형식만 강제한다.
 _PHONE_RE = re.compile(r'^\+[1-9]\d{6,14}$')
 
@@ -123,6 +128,9 @@ async def register(request: Request):
         return JSONResponse({"error": "이메일 형식이 올바르지 않습니다."}, status_code=400)
     if phone and not _PHONE_RE.match(phone):
         return JSONResponse({"error": "핸드폰 번호 형식이 올바르지 않습니다."}, status_code=400)
+    # 프론트 체크박스만 믿지 않는다 — 직접 API 를 때려도 동의 없이는 가입할 수 없다.
+    if not (data.get('terms_agreed') is True and data.get('privacy_agreed') is True):
+        return JSONResponse({"error": "이용약관과 개인정보처리방침에 동의해주세요."}, status_code=400)
 
     hashed_password = generate_password_hash(password)
     conn = get_db_connection()
@@ -143,6 +151,14 @@ async def register(request: Request):
                 (user_id, hashed_password, name, email, phone or None)
             )
             new_member_id = cursor.lastrowid
+            # 동의 이력은 가입과 같은 트랜잭션으로 남긴다 — 동의 기록 없는 회원이 생기지 않게.
+            cursor.executemany(
+                "INSERT INTO member_consents (member_id, doc, version) VALUES (%s, %s, %s)",
+                [
+                    (new_member_id, 'terms', TERMS_VERSION),
+                    (new_member_id, 'privacy', PRIVACY_VERSION),
+                ],
+            )
             _create_book_for_member(cursor, new_member_id, name)
         conn.commit()
         return JSONResponse({"message": "회원가입이 완료되었습니다! 로그인해주세요."}, status_code=201)

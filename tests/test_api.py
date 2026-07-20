@@ -18,6 +18,8 @@ from database.db_connection import get_db_connection
 
 # 가입 비밀번호 규칙(대소문자·숫자·특수문자 포함 8자 이상)을 만족해야 register가 201을 준다.
 TEST_PW = "Test1234!"
+# 약관·개인정보 동의(필수) — 없으면 register가 400을 준다.
+CONSENT = {"terms_agreed": True, "privacy_agreed": True}
 
 
 @pytest.fixture(scope="module")
@@ -32,7 +34,7 @@ def client(created):
     uid = "pytest_" + uuid.uuid4().hex[:8]
 
     # 1) 회원가입 (자동으로 전용 가구 + 기본 카테고리 생성됨)
-    r = c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": "테스트유저", "email": f"{uid}@test.com"})
+    r = c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": "테스트유저", "email": f"{uid}@test.com", **CONSENT})
     assert r.status_code == 201, r.text
 
     # 2) 로그인 (세션 쿠키 저장됨)
@@ -307,7 +309,7 @@ def _register_login(prefix):
     """새 유저를 만들고 로그인한 (client, uid, book_id, member_id)."""
     c = TestClient(app)
     uid = prefix + uuid.uuid4().hex[:8]
-    r = c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": uid, "email": f"{uid}@test.com"})
+    r = c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": uid, "email": f"{uid}@test.com", **CONSENT})
     assert r.status_code == 201, r.text
     r = c.post("/auth/login", json={"user_id": uid, "password": TEST_PW})
     assert r.status_code == 200, r.text
@@ -515,7 +517,7 @@ def test_ai_chat_validation_and_rate_limit():
 # ──────────────────────────────────────────────────────────────────
 def test_register_validation():
     c = TestClient(app)
-    base = {"user_id": "regval_" + uuid.uuid4().hex[:6], "password": TEST_PW, "name": "n", "email": "a@b.com"}
+    base = {"user_id": "regval_" + uuid.uuid4().hex[:6], "password": TEST_PW, "name": "n", "email": "a@b.com", **CONSENT}
 
     def r(**over):
         return c.post("/auth/register", json={**base, **over})
@@ -530,6 +532,8 @@ def test_register_validation():
     assert r(phone="12345").status_code == 400              # 핸드폰: E.164 아님
     assert r(phone="010-1234-5678").status_code == 400      # 국내 표기는 프론트가 E.164로 정규화해 보낸다
     assert r(phone="+8210123456789012").status_code == 400  # E.164 최대 15자리 초과
+    assert r(terms_agreed=False).status_code == 400         # 약관 미동의
+    assert r(privacy_agreed=None).status_code == 400        # True 가 아닌 값은 전부 거부
     # 컬럼이 varchar(100)이라 초과분은 DB 오류(500)가 아니라 400이어야 한다.
     assert r(email="a" * 95 + "@b.com").status_code == 400
 
@@ -546,6 +550,7 @@ def test_register_rejects_duplicates():
                 "password": TEST_PW,
                 "name": "중복검사",
                 "email": f"fresh{uuid.uuid4().hex[:6]}@test.com",
+                **CONSENT,
             }
             return fresh.post("/auth/register", json={**body, **over})
 
@@ -575,7 +580,7 @@ def test_register_phone_is_optional():
     c = TestClient(app)
 
     def reg(user_id, **over):
-        body = {"user_id": user_id, "password": TEST_PW, "name": "폰검사", "email": f"{user_id}@test.com"}
+        body = {"user_id": user_id, "password": TEST_PW, "name": "폰검사", "email": f"{user_id}@test.com", **CONSENT}
         return c.post("/auth/register", json={**body, **over})
 
     try:
@@ -589,6 +594,46 @@ def test_register_phone_is_optional():
         _cleanup_user_id(uid_without)
 
 
+def test_register_records_consents():
+    """가입하면 약관·개인정보 동의가 현재 시행 버전으로 기록되어야 한다."""
+    from routes.auth import TERMS_VERSION, PRIVACY_VERSION
+
+    uid = "cons_" + uuid.uuid4().hex[:6]
+    c = TestClient(app)
+    try:
+        r = c.post("/auth/register", json={
+            "user_id": uid, "password": TEST_PW, "name": "동의", "email": f"{uid}@test.com", **CONSENT,
+        })
+        assert r.status_code == 201, r.text
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT mc.doc, mc.version FROM member_consents mc"
+                " JOIN members m ON m.id = mc.member_id WHERE m.user_id = %s",
+                (uid,),
+            )
+            rows = {row["doc"]: row["version"] for row in cur.fetchall()}
+        conn.close()
+        assert rows == {"terms": TERMS_VERSION, "privacy": PRIVACY_VERSION}
+    finally:
+        _cleanup_user_id(uid)
+
+
+def test_legal_version_matches_frontend():
+    """동의 기록 버전(auth.py)과 사용자가 보는 문서의 시행일(LegalPage.tsx)이 어긋나면
+    "본 버전"과 "기록된 버전"이 달라져 동의 증빙이 부정확해진다. 개정 시 둘을 함께 올려야 한다."""
+    import re
+
+    from routes.auth import TERMS_VERSION, PRIVACY_VERSION
+
+    path = os.path.join(os.path.dirname(__file__), "..", "frontend", "components", "LegalPage.tsx")
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    m = re.search(r"LEGAL_EFFECTIVE_DATE\s*=\s*'(\d{4}-\d{2}-\d{2})'", src)
+    assert m, "LegalPage.tsx 에서 LEGAL_EFFECTIVE_DATE 를 찾지 못했습니다."
+    assert m.group(1) == TERMS_VERSION == PRIVACY_VERSION
+
+
 def test_profile():
     uid = "prof_" + uuid.uuid4().hex[:6]
     c = TestClient(app)
@@ -596,7 +641,7 @@ def test_profile():
         assert TestClient(app).get("/auth/profile").status_code == 401   # 비로그인
         c.post("/auth/register", json={
             "user_id": uid, "password": TEST_PW, "name": "프로필",
-            "email": f"{uid}@test.com", "phone": "+821012345678",
+            "email": f"{uid}@test.com", "phone": "+821012345678", **CONSENT,
         })
         c.post("/auth/login", json={"user_id": uid, "password": TEST_PW})
 
@@ -615,7 +660,7 @@ def test_update_phone():
     c = TestClient(app)
     try:
         assert TestClient(app).post("/auth/update-phone", json={"phone": "+821011112222"}).status_code == 401
-        c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": "폰", "email": f"{uid}@test.com"})
+        c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": "폰", "email": f"{uid}@test.com", **CONSENT})
         c.post("/auth/login", json={"user_id": uid, "password": TEST_PW})
         assert c.get("/auth/profile").json()["phone"] is None   # 가입 시 미등록
 
