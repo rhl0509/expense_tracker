@@ -49,42 +49,27 @@ export default function AiAdvisorPage() {
     };
   }, [monthly, catChart]);
 
-  // ── 자동 분석 ──
+  // ── AI 분석 (사용자가 눌러야 실행) ──
+  // 화면에 들어오기만 해도 자동 호출하지 않는다. AI 키는 BYOK라 호출 비용이 사용자
+  // 지갑에서 나가고, 페이지 진입은 "분석해 달라"는 의사 표시가 아니다.
+  // 프롬프트·재정 컨텍스트는 서버가 세션의 가구로 직접 조립한다.
   const [analysis, setAnalysis] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
-  const ranRef = useRef(false);
+  const [analyzed, setAnalyzed] = useState(false);
 
-  useEffect(() => {
-    if (!ctx || ranRef.current) return;
-    ranRef.current = true;
-    (async () => {
-      setAnalyzing(true);
-      setAnalysis('');
-      const catStr = ctx.categories.slice(0, 6).map((c) => `${c.label}: ${fmt(c.value)}`).join(', ');
-      const prompt = `당신은 친절하고 전문적인 한국어 재정 어드바이저입니다.
-사용자의 ${ctx.month}월 가계부 데이터를 분석하여 핵심 인사이트와 실용적인 조언을 제공하세요.
-
-## 이번달 재정 데이터
-- 수입: ${fmt(ctx.income)}
-- 지출: ${fmt(ctx.expense)} ${ctx.expenseChange !== null ? `(전달 대비 ${ctx.expenseChange}%)` : ''}
-- 저축: ${fmt(ctx.saving)} (저축률 ${ctx.savingRate}%)
-- 잉여금: ${fmt(Math.max(ctx.surplus, 0))}
-- 카테고리별 지출: ${catStr || '데이터 없음'}
-
-## 작성 지침
-1. 데이터 기반으로 3가지 핵심 인사이트를 이모지와 함께 작성하세요
-2. 절약 가능한 부분 1~2가지를 구체적으로 제안하세요
-3. 다음달 목표 1가지를 제안하세요
-4. 500자 이내로 간결하고 격려하는 톤으로 작성하세요`;
-      try {
-        await aiAnalyze(prompt, (chunk) => setAnalysis((a) => a + chunk));
-      } catch (e) {
-        setAnalysis(`⚠️ AI 분석 중 오류가 발생했습니다: ${(e as Error).message}`);
-      } finally {
-        setAnalyzing(false);
-      }
-    })();
-  }, [ctx]);
+  async function runAnalysis() {
+    if (analyzing) return;
+    setAnalyzing(true);
+    setAnalyzed(true);
+    setAnalysis('');
+    try {
+      await aiAnalyze((chunk) => setAnalysis((a) => a + chunk));
+    } catch (e) {
+      setAnalysis(`⚠️ AI 분석 중 오류가 발생했습니다: ${(e as Error).message}`);
+    } finally {
+      setAnalyzing(false);
+    }
+  }
 
   // ── 챗봇 ──
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -99,21 +84,9 @@ export default function AiAdvisorPage() {
     setMessages(history);
     setInput('');
     setSending(true);
-    const catStr = ctx ? ctx.categories.slice(0, 8).map((c) => `${c.label}: ${fmt(c.value)}`).join(', ') : '없음';
-    const system = `당신은 가계부의 친절한 AI 재정 어드바이저입니다.
-사용자의 실제 가계부 데이터를 기반으로 맞춤형 재정 조언을 제공합니다.
-
-## 사용자 현재 재정 상황 (${ctx ? ctx.month + '월' : '불명'})
-${ctx ? `- 수입: ${fmt(ctx.income)} / 지출: ${fmt(ctx.expense)} / 저축: ${fmt(ctx.saving)}
-- 저축률: ${ctx.savingRate}% / 잉여금: ${fmt(Math.max(ctx.surplus, 0))}
-- 카테고리별 지출: ${catStr}
-${ctx.expenseChange !== null ? `- 전달 대비: ${ctx.expenseChange}% 변화` : ''}` : '데이터를 불러오지 못했습니다.'}
-
-## 답변 지침
-- 한국어로 친근하고 따뜻하게, 구체적인 금액과 데이터를 활용해 200자 이내로 답변하세요`;
     setMessages((m) => [...m, { role: 'assistant', content: '' }]);
     try {
-      await aiChat(system, history, (chunk) =>
+      await aiChat(history, (chunk) =>
         setMessages((m) => {
           const copy = [...m];
           copy[copy.length - 1] = { role: 'assistant', content: copy[copy.length - 1].content + chunk };
@@ -163,9 +136,22 @@ ${ctx.expenseChange !== null ? `- 전달 대비: ${ctx.expenseChange}% 변화` :
       <div style={{ display: 'grid', gap: 14, marginBottom: 14 }} className="grid-cols-1 lg:grid-cols-2">
         {/* AI 분석 */}
         <div className="card" style={{ padding: 22 }}>
-          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>✦ AI 분석 리포트</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>✦ AI 분석 리포트</div>
+            <button className="btn btn-ghost btn-sm" onClick={runAnalysis} disabled={analyzing}>
+              {analyzing ? '분석 중…' : analyzed ? '다시 분석' : '분석 실행'}
+            </button>
+          </div>
           <div className="md" style={{ minHeight: 180, borderRadius: 12, background: 'var(--hover-bg)', padding: 16, fontSize: '0.88rem', lineHeight: 1.7, color: 'var(--text)' }}>
-            {analyzing && !analysis ? <span style={{ color: 'var(--text-3)' }}>AI가 분석 중입니다…</span> : <ReactMarkdown>{analysis}</ReactMarkdown>}
+            {analyzing && !analysis ? (
+              <span style={{ color: 'var(--text-3)' }}>AI가 분석 중입니다…</span>
+            ) : analysis ? (
+              <ReactMarkdown>{analysis}</ReactMarkdown>
+            ) : (
+              <span style={{ color: 'var(--text-3)' }}>
+                「분석 실행」을 누르면 이번 달 데이터를 AI가 분석합니다. 등록하신 API 키로 호출되며 사용량이 발생합니다.
+              </span>
+            )}
           </div>
         </div>
 

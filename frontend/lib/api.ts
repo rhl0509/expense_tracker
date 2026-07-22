@@ -286,12 +286,13 @@ export async function streamText(
   }
 }
 
-export const aiAnalyze = (prompt: string, onChunk: (t: string) => void, signal?: AbortSignal) =>
-  streamText('/ai/analyze', { prompt }, onChunk, signal);
+// 프롬프트·재정 컨텍스트는 서버가 세션의 가구로 직접 조립한다(routes/expense_ai.py).
+// 클라이언트는 대화 내용만 보낸다 — 여기서 system 을 만들어 보내지 말 것.
+export const aiAnalyze = (onChunk: (t: string) => void, signal?: AbortSignal) =>
+  streamText('/ai/analyze', {}, onChunk, signal);
 
 export const aiChat = (
-  system: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
   onChunk: (t: string) => void,
   signal?: AbortSignal,
-) => streamText('/ai/chat', { system, messages }, onChunk, signal);
+) => streamText('/ai/chat', { messages }, onChunk, signal);
