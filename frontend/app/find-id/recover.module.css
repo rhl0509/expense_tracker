@@ -1,0 +1,106 @@
+/* 아이디/비밀번호 찾기 공용 스타일. 로그인 카드(login.module.css)와 같은 톤이되, 다단계 폼
+   (이메일 도메인 선택·코드 입력·결과 표시)에 필요한 요소를 더했다. CSS Module로 두는 이유는
+   login.module.css 와 같다 — client 컴포넌트에서 첫 프레임 FOUC 를 막기 위해서다.
+   reset-password 페이지가 ../find-id/recover.module.css 로 이 파일을 함께 import 한다. */
+
+.wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(900px 500px at 15% -10%, rgba(16, 185, 129, 0.10), transparent 60%),
+    radial-gradient(800px 500px at 110% 120%, rgba(16, 185, 129, 0.08), transparent 55%),
+    var(--body-bg);
+  color: var(--text);
+  font-family: inherit;
+}
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 24px;
+  padding: 36px 32px 28px;
+  box-shadow: var(--card-shadow);
+}
+.brand { display: flex; justify-content: center; margin-bottom: 8px; }
+.title { text-align: center; font-size: 18px; font-weight: 800; margin: 12px 0 4px; }
+.subtitle { text-align: center; color: var(--text-3); font-size: 13px; margin: 0 0 24px; }
+
+.field { margin-bottom: 15px; }
+.field > label { display: block; font-size: 13px; font-weight: 700; color: var(--text-2); margin: 0 2px 7px; }
+
+/* 단일 입력칸(로그인 .input 컨테이너를 참고하되 아이콘 없이 단순화). */
+.input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1.5px solid var(--input-border);
+  border-radius: 14px;
+  font-size: 15px;
+  color: var(--text);
+  padding: 13px 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.input::placeholder { color: var(--text-3); }
+.input:focus { border-color: var(--income); background: var(--card-bg); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15); }
+.input:disabled { opacity: 0.6; }
+select.input { cursor: pointer; }
+
+/* 여러 칸을 한 줄에(이메일 local@domain, 코드 입력+버튼 등). */
+.rowLine { display: flex; align-items: center; gap: 8px; }
+.at { color: var(--text-3); flex: 0 0 auto; font-size: 15px; }
+
+.btn {
+  width: 100%; border: 0; border-radius: 14px; cursor: pointer;
+  font-family: inherit; font-size: 15px; font-weight: 800; padding: 14px 16px;
+  transition: transform 0.05s, box-shadow 0.15s, opacity 0.15s, background 0.15s;
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.6; cursor: default; }
+.btnPrimary {
+  color: #07271b; background: var(--income);
+  box-shadow: 0 10px 22px rgba(16, 185, 129, 0.28);
+}
+.btnPrimary:hover:not(:disabled) { opacity: 0.92; box-shadow: 0 12px 26px rgba(16, 185, 129, 0.36); }
+.btnGhost {
+  background: var(--card-bg); color: var(--income);
+  border: 1.5px solid var(--income); box-shadow: none;
+}
+.btnGhost:hover:not(:disabled) { background: var(--hover-bg); }
+
+/* 코드 입력줄의 인라인 소형 버튼(확인·재발송). */
+.btnSm { width: auto; flex: 0 0 auto; padding: 12px 14px; font-size: 13px; font-weight: 700; }
+
+.ok { color: var(--income); font-size: 13px; font-weight: 700; margin: 8px 2px 0; }
+.hint { color: var(--text-3); font-size: 12px; margin: 7px 2px 0; }
+
+/* 인라인 경고(제출 버튼 위, 카드 높이를 밀지 않게 절대위치). register 의 패턴과 같다. */
+.errWrap { position: relative; margin-top: 6px; }
+.err {
+  position: absolute; bottom: calc(100% + 8px); left: 0; right: 0;
+  background: var(--card-bg); border: 1px solid rgba(244, 63, 94, 0.5);
+  border-radius: 8px; padding: 9px 12px; font-size: 0.8rem; font-weight: 600;
+  color: #f43f5e; text-align: center; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22); z-index: 5;
+}
+
+/* 아이디 찾기 결과 박스. */
+.result {
+  text-align: center; padding: 22px 16px;
+  background: var(--input-bg); border: 1.5px solid var(--income);
+  border-radius: 16px; margin-bottom: 8px;
+}
+.resultLabel { color: var(--text-3); font-size: 12.5px; margin: 0 0 8px; }
+.resultId { font-size: 22px; font-weight: 800; color: var(--text); word-break: break-all; }
+.resultMeta { color: var(--text-3); font-size: 12px; margin: 10px 0 0; }
+
+.foot { text-align: center; font-size: 12.5px; color: var(--text-3); margin-top: 18px; }
+.foot a, .footBtn {
+  color: var(--income); font-weight: 700; background: none; border: 0;
+  cursor: pointer; font-family: inherit; font-size: 12.5px; padding: 0;
+}
+.footBtn:hover { text-decoration: underline; }
+.stack { display: flex; flex-direction: column; gap: 11px; }

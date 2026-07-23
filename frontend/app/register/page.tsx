@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { register, checkUserId } from '@/lib/api';
+import { register, checkUserId, sendEmailCode, verifyEmailCode } from '@/lib/api';
 import NoticeModal from '@/components/NoticeModal';
 import LegalAgreementModal from '@/components/LegalAgreementModal';
 import TermsContent from '@/components/legal/TermsContent';
@@ -59,6 +59,14 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [checkingId, setCheckingId] = useState(false);
+  // 이메일 인증(발송→코드입력→확인). emailVerified 에는 '인증 완료된 이메일 문자열'을 담아,
+  // 그 뒤 이메일을 바꾸면 자동으로 무효화되게 한다(값 비교).
+  const [codeSent, setCodeSent] = useState(false);
+  const [emailCode, setEmailCode] = useState('');
+  const [emailVerified, setEmailVerified] = useState('');
+  const [sendingCode, setSendingCode] = useState(false);
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [resendIn, setResendIn] = useState(0); // 재발송 쿨다운(초)
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [agreePrivacy, setAgreePrivacy] = useState(false);
   // 열려 있는 약관 모달('terms'|'privacy'|null). '보기'를 누르면 새 페이지 대신 모달로 연다.
@@ -78,6 +86,57 @@ export default function RegisterPage() {
   }, [error, errKey]);
 
   const set = (key: keyof typeof form, value: string) => setForm(f => ({ ...f, [key]: value }));
+
+  const emailValue = `${form.email_local.trim()}@${form.email_domain.trim()}`;
+  const emailComplete = form.email_local.trim() !== '' && form.email_domain.trim() !== '';
+  const emailVerifiedOk = emailVerified !== '' && emailVerified === emailValue;
+
+  // 이메일을 바꾸면 이전 발송·인증 상태를 무효화한다(다른 주소로 통과하는 것 방지).
+  useEffect(() => {
+    setCodeSent(false);
+    setEmailCode('');
+    setEmailVerified('');
+    setResendIn(0);
+  }, [form.email_local, form.email_domain]);
+
+  // 재발송 쿨다운 카운트다운.
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn(s => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  const sendCode = async () => {
+    if (!emailComplete) { showError('이메일을 먼저 입력해주세요.'); return; }
+    setSendingCode(true);
+    try {
+      await sendEmailCode(emailValue);
+      setCodeSent(true);
+      setEmailCode('');
+      setResendIn(60);
+      setNotice({ variant: 'success', title: '인증 코드를 보냈습니다', message: '메일함에서 6자리 코드를 확인해 입력해주세요.' });
+    } catch (err: unknown) {
+      setNotice({ variant: 'error', title: '발송하지 못했습니다', message: (err as Error).message || '잠시 후 다시 시도해주세요.' });
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
+  const verifyCode = async () => {
+    const code = emailCode.trim();
+    if (!code) { showError('인증 코드를 입력해주세요.'); return; }
+    setVerifyingCode(true);
+    try {
+      await verifyEmailCode(emailValue, code);
+      setEmailVerified(emailValue);
+      setCodeSent(false);
+      setNotice({ variant: 'success', title: '이메일 인증 완료', message: '이메일이 확인되었습니다.' });
+    } catch (err: unknown) {
+      setNotice({ variant: 'error', title: '인증하지 못했습니다', message: (err as Error).message || '코드를 다시 확인해주세요.' });
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
 
   const checkId = async () => {
     const uid = form.user_id.trim();
@@ -100,16 +159,17 @@ export default function RegisterPage() {
   };
 
   const checkPassword = () => {
+    // 이 모달은 작은 설명 텍스트 없이 제목만 보여준다 — 오류 사유는 제목으로 올린다.
     const err = passwordError(form.password);
     if (err) {
-      setNotice({ variant: 'error', title: '비밀번호를 확인해주세요', message: err });
+      setNotice({ variant: 'error', title: err, message: '' });
       return;
     }
     if (form.password !== form.password_confirm) {
-      setNotice({ variant: 'error', title: '비밀번호가 일치하지 않습니다', message: '두 입력란에 같은 비밀번호를 입력해주세요.' });
+      setNotice({ variant: 'error', title: '비밀번호가 일치하지 않습니다', message: '' });
       return;
     }
-    setNotice({ variant: 'success', title: '사용 가능한 비밀번호입니다', message: `${PW_HINT} — 규칙을 모두 만족하고 두 입력란이 일치합니다.` });
+    setNotice({ variant: 'success', title: '사용 가능한 비밀번호입니다', message: '' });
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -150,6 +210,10 @@ export default function RegisterPage() {
     const email = `${form.email_local.trim()}@${form.email_domain.trim()}`;
     if (!form.email_local.trim() || !form.email_domain.trim()) {
       showError('이메일을 입력해주세요.');
+      return;
+    }
+    if (emailVerified !== email) {
+      showError('이메일 인증을 완료해주세요.');
       return;
     }
     if (!agreeTerms || !agreePrivacy) {
@@ -275,6 +339,50 @@ export default function RegisterPage() {
                   {EMAIL_DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
+
+              {/* 이메일 인증 — 발송 → 코드 입력 → 확인. 인증 완료 시 배지. */}
+              {emailVerifiedOk ? (
+                <p className={styles.ok} style={{ margin: '8px 0 0' }}>✓ 이메일 인증 완료</p>
+              ) : codeSent ? (
+                <div className={styles.rowLine} style={{ marginTop: 8 }}>
+                  <input
+                    className={styles.input}
+                    style={{ flex: 1, minWidth: 0 }}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="메일로 받은 6자리 코드"
+                    value={emailCode}
+                    onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  />
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnGhost} ${styles.btnSm}`}
+                    onClick={verifyCode}
+                    disabled={verifyingCode}
+                  >
+                    {verifyingCode ? '확인 중...' : '확인'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnGhost} ${styles.btnSm}`}
+                    onClick={sendCode}
+                    disabled={sendingCode || resendIn > 0}
+                  >
+                    {resendIn > 0 ? `재발송 ${resendIn}s` : '재발송'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnGhost}`}
+                  onClick={sendCode}
+                  disabled={sendingCode || !emailComplete}
+                  style={{ width: '100%', marginTop: 8, padding: '11px 16px', fontSize: '0.85rem' }}
+                >
+                  {sendingCode ? '발송 중...' : '인증코드 발송'}
+                </button>
+              )}
             </div>
 
             <div>

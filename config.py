@@ -60,6 +60,21 @@ class Config:
     LOCAL_LLM_URL   = (os.getenv('LOCAL_LLM_URL') or '').strip()
     LOCAL_LLM_MODEL = (os.getenv('LOCAL_LLM_MODEL') or 'qwen2.5:latest').strip()
 
+    # ── 이메일 발송 (회원가입 인증코드) ──────────────────────────────────
+    # 회원가입 시 이메일로 6자리 인증코드를 보낸다. **미설정이면 실제 발송 대신 서버 로그에
+    # 코드를 찍는 개발용 폴백**으로 동작한다(자격증명 없이 흐름을 바로 테스트하기 위함).
+    # Gmail 예: SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_USER=[email protected],
+    #          SMTP_PASSWORD=<앱 비밀번호 16자>. SMTP_FROM 미설정 시 SMTP_USER 를 발신자로 쓴다.
+    SMTP_HOST     = (os.getenv('SMTP_HOST') or '').strip()
+    SMTP_PORT     = int(os.getenv('SMTP_PORT', '587'))
+    SMTP_USER     = (os.getenv('SMTP_USER') or '').strip()
+    SMTP_PASSWORD = os.getenv('SMTP_PASSWORD') or ''
+    SMTP_FROM     = (os.getenv('SMTP_FROM') or os.getenv('SMTP_USER') or '').strip()
+
     @classmethod
     def local_llm_enabled(cls) -> bool:
         return bool(cls.LOCAL_LLM_URL)
+
+    @classmethod
+    def smtp_enabled(cls) -> bool:
+        return bool(cls.SMTP_HOST and cls.SMTP_USER and cls.SMTP_PASSWORD)

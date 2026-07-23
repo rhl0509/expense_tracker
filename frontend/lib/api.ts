@@ -45,7 +45,47 @@ export const checkUserId = (user_id: string) =>
     body: JSON.stringify({ user_id }),
   });
 
+// 회원가입 이메일 인증코드 발송. 이미 가입된 이메일이면 409(중복확인 겸용).
+export const sendEmailCode = (email: string) =>
+  req<{ message: string }>('/auth/send-email-code', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+
+export const verifyEmailCode = (email: string, code: string) =>
+  req<{ message: string; verified: boolean }>('/auth/verify-email-code', {
+    method: 'POST',
+    body: JSON.stringify({ email, code }),
+  });
+
 export const logout = () => fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+
+// ── 아이디/비밀번호 찾기 (이메일 인증) ──────────────────────────────────
+// 회원가입 인증과 같은 세션-코드 흐름이지만 엔드포인트·세션 키가 분리돼 있다.
+export const findIdSendCode = (name: string, email: string) =>
+  req<{ message: string }>('/auth/find-id/send-code', {
+    method: 'POST', body: JSON.stringify({ name, email }),
+  });
+
+export const findIdVerify = (name: string, email: string, code: string) =>
+  req<{ user_id: string; created_at: string | null }>('/auth/find-id/verify', {
+    method: 'POST', body: JSON.stringify({ name, email, code }),
+  });
+
+export const resetPwSendCode = (user_id: string, email: string) =>
+  req<{ message: string }>('/auth/reset-password/send-code', {
+    method: 'POST', body: JSON.stringify({ user_id, email }),
+  });
+
+export const resetPwVerify = (user_id: string, email: string, code: string) =>
+  req<{ message: string; verified: boolean }>('/auth/reset-password/verify', {
+    method: 'POST', body: JSON.stringify({ user_id, email, code }),
+  });
+
+export const resetPwConfirm = (new_password: string) =>
+  req<{ message: string }>('/auth/reset-password/confirm', {
+    method: 'POST', body: JSON.stringify({ new_password }),
+  });
 
 // 마이페이지 전용. /me 는 세션만 읽는 인증 가드라 이메일·핸드폰이 없다.
 export const getProfile = () =>

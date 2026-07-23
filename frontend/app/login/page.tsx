@@ -124,9 +124,9 @@ export default function LoginPage() {
               <input type="checkbox" checked={rememberId} onChange={(e) => setRememberId(e.target.checked)} /> 아이디 기억하기
             </label>
             <div className={styles.links}>
-              <button type="button" className={styles.linkBtn} onClick={() => toast('아이디 찾기는 준비 중입니다.')}>아이디 찾기</button>
+              <button type="button" className={styles.linkBtn} onClick={() => router.push('/find-id')}>아이디 찾기</button>
               <span className={styles.sep}>|</span>
-              <button type="button" className={styles.linkBtn} onClick={() => toast('비밀번호 찾기는 준비 중입니다.')}>비밀번호 찾기</button>
+              <button type="button" className={styles.linkBtn} onClick={() => router.push('/reset-password')}>비밀번호 찾기</button>
             </div>
           </div>
 
