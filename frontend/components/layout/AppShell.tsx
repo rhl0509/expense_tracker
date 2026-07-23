@@ -27,13 +27,9 @@ const NAV_ANALYSIS: NavItem[] = [
   { href: '/household',     icon: '⌂',  label: '가구 관리' },
   { href: '/ai-advisor',    icon: '✦',  label: 'AI 어드바이저' },
 ];
-const BOTTOM_TABS: NavItem[] = [
-  { href: '/record',       icon: '✎',  label: '기록' },
-  { href: '/transactions', icon: '≡',  label: '내역' },
-  { href: '/dashboard',    icon: '◈',  label: '대시보드' },
-  { href: '/analytics',    icon: '▲',  label: '분석' },
-  { href: '/ai-advisor',   icon: '✦',  label: 'AI' },
-];
+// 모바일 하단바 그룹 시트에 올라올 항목 — 사이드바 그룹에서 중복/제외분을 뺀 것.
+const MOBILE_LEDGER = NAV_MAIN.filter((i) => i.href !== '/dashboard');        // 대시보드는 가운데 바로가기 버튼
+const MOBILE_ANALYSIS = NAV_ANALYSIS.filter((i) => i.href !== '/ai-advisor'); // AI 어드바이저 제외
 
 // 로고는 홈(기록하기) 링크다. <button>이 아니라 <Link>인 이유: 하는 일이 페이지 이동이라
 // 새 탭 열기·가운데 클릭이 되고 스크린리더가 목적지 있는 링크로 읽는다.
@@ -42,6 +38,15 @@ const logoStyle: React.CSSProperties = {
   alignItems: 'center',
   textDecoration: 'none',
 };
+
+// 모바일 하단바 3버튼 공용 스타일(아이콘 위 · 라벨 아래). 버튼/링크 모두 같은 모양을 쓴다.
+const mobileTabStyle = (active: boolean): React.CSSProperties => ({
+  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+  padding: '6px 4px', fontSize: '0.6rem', fontWeight: active ? 700 : 500,
+  color: active ? 'var(--accent)' : 'var(--text-3)',
+  background: 'transparent', border: 0, cursor: 'pointer', fontFamily: 'inherit',
+  textDecoration: 'none', borderRadius: 8,
+});
 
 // 가로형 워드마크(로봇 + "AI가계부"). 라이트=컬러, 다크=화이트를 CSS(.logo-light/.logo-dark)로
 // 전환한다. data-theme는 FOUC 부트스트랩이 페인트 전에 확정하므로 깜빡임이 없다. 원본 1116×288.
@@ -76,7 +81,7 @@ const TITLES: Record<string, string> = {
   '/my': '마이페이지',   // 내 정보(구 /settings)를 여기로 합쳤다
 };
 
-function ThemeToggle() {
+function ThemeToggle({ asMenuItem }: { asMenuItem?: boolean } = {}) {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   useEffect(() => {
     // FOUC 스크립트가 저장값/기기설정을 반영해 이미 확정한 결과를 그대로 읽는다.
@@ -89,6 +94,14 @@ function ThemeToggle() {
     document.documentElement.setAttribute('data-theme', next);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLORS[next]);
   };
+  // asMenuItem: 계정 메뉴 안에서 다른 항목과 같은 행 스타일로 렌더한다(토글해도 메뉴는 열린 채 유지).
+  if (asMenuItem) {
+    return (
+      <button onClick={toggle} className="menu-item" style={menuItemStyle}>
+        {theme === 'dark' ? '☀ 라이트 모드' : '◑ 다크 모드'}
+      </button>
+    );
+  }
   return (
     <button
       onClick={toggle}
@@ -114,13 +127,13 @@ function LockIcon() {
   );
 }
 
-function NavLink({ item, active, locked, onLockedClick }: {
-  item: NavItem; active: boolean; locked?: boolean; onLockedClick?: () => void;
+function NavLink({ item, active, locked, onLockedClick, onNavigate }: {
+  item: NavItem; active: boolean; locked?: boolean; onLockedClick?: () => void; onNavigate?: () => void;
 }) {
   return (
     <Link
       href={item.href}
-      onClick={locked ? (e) => { e.preventDefault(); onLockedClick?.(); } : undefined}
+      onClick={locked ? (e) => { e.preventDefault(); onLockedClick?.(); } : onNavigate}
       aria-disabled={locked || undefined}
       style={{
         display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10,
@@ -154,6 +167,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modal, setModal] = useState<'logout' | 'ai-locked' | null>(null);
+  // 모바일 하단바 그룹 시트(가계부/분석)가 열려 있는지. 밑에서 위로 떠오르는 시트.
+  const [sheet, setSheet] = useState<'ledger' | 'analysis' | null>(null);
   // AI 어드바이저는 본인 API 키가 있어야 쓸 수 있다. 미등록이면 사이드탭에서 자물쇠로 막고
   // 등록을 안내한다. 로드 전(undefined)엔 잠그지 않는다 — 링크가 잠깐 잠겼다 풀리는 깜빡임 방지.
   const { data: aiCred } = useQuery({ queryKey: ['ai-credential'], queryFn: getAiCredential });
@@ -163,7 +178,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!isLoading && !user) router.replace('/login');
   }, [user, isLoading, router]);
 
-  useEffect(() => { setMenuOpen(false); }, [pathname]);
+  useEffect(() => { setMenuOpen(false); setSheet(null); }, [pathname]);
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
@@ -267,45 +282,134 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           style={{
             background: 'var(--nav-bg)', borderBottom: '1px solid var(--nav-border)',
             padding: '12px 16px', paddingTop: 'calc(12px + env(safe-area-inset-top))',
-            alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+            alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative',
           }}
           className="flex md:hidden"
         >
           <Link href="/record" className="logo-link" style={logoStyle} aria-label="AI 가계부 홈 — 기록하기로 이동">
             <HeaderLogo height={24} />
           </Link>
-          <ThemeToggle />
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-haspopup="true"
+            aria-expanded={menuOpen}
+          >
+            계정 ▾
+          </button>
+          {menuOpen && (
+            <>
+              {/* 바깥을 탭하면 닫힘 */}
+              <div onClick={() => setMenuOpen(false)} aria-hidden style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+              <div
+                role="menu"
+                style={{
+                  position: 'absolute', top: '100%', right: 12, marginTop: 6, minWidth: 160,
+                  background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 12,
+                  overflow: 'hidden', boxShadow: '0 12px 32px rgba(0, 0, 0, 0.3)', zIndex: 31,
+                }}
+              >
+                <Link
+                  href="/my"
+                  className="menu-item"
+                  style={{ ...menuItemStyle, display: 'block', textDecoration: 'none' }}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  ⚙ 마이페이지
+                </Link>
+                <div style={{ height: 1, background: 'var(--card-border)' }} />
+                {aiLocked ? (
+                  <button
+                    className="menu-item"
+                    style={{ ...menuItemStyle, display: 'flex', alignItems: 'center', gap: 8 }}
+                    onClick={() => { setMenuOpen(false); setModal('ai-locked'); }}
+                  >
+                    ✦ AI 어드바이저 <LockIcon />
+                  </button>
+                ) : (
+                  <Link
+                    href="/ai-advisor"
+                    className="menu-item"
+                    style={{ ...menuItemStyle, display: 'block', textDecoration: 'none' }}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    ✦ AI 어드바이저
+                  </Link>
+                )}
+                <div style={{ height: 1, background: 'var(--card-border)' }} />
+                <ThemeToggle asMenuItem />
+                <div style={{ height: 1, background: 'var(--card-border)' }} />
+                <button
+                  style={{ ...menuItemStyle, color: 'var(--expense)' }}
+                  onClick={() => { setMenuOpen(false); setModal('logout'); }}
+                >
+                  ⎋ 로그아웃
+                </button>
+              </div>
+            </>
+          )}
         </header>
 
         <main style={{ flex: 1, overflow: 'hidden auto', padding: '20px 16px 24px' }} className="md:p-6">
           {children}
         </main>
 
-        {/* Mobile bottom nav */}
+        {/* 그룹 시트 딤 배경 — 탭하면 닫힘 */}
+        {sheet && (
+          <div
+            className="mnav-backdrop md:hidden"
+            onClick={() => setSheet(null)}
+            aria-hidden
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.35)', zIndex: 40 }}
+          />
+        )}
+        {/* 밑에서 위로 떠오르는 그룹 시트(가계부/분석) */}
+        {sheet && (
+          <div
+            className="mnav-sheet md:hidden"
+            role="menu"
+            style={{
+              position: 'fixed', left: 10, right: 10,
+              bottom: 'calc(60px + env(safe-area-inset-bottom))', zIndex: 41,
+              background: 'var(--card-bg)', border: '1px solid var(--nav-border)',
+              borderRadius: 16, padding: 6, boxShadow: '0 -10px 34px rgba(0, 0, 0, 0.28)',
+            }}
+          >
+            {(sheet === 'ledger' ? MOBILE_LEDGER : MOBILE_ANALYSIS).map((item) => (
+              <NavLink key={item.href} item={item} active={isActive(item.href)} onNavigate={() => setSheet(null)} />
+            ))}
+          </div>
+        )}
+
+        {/* Mobile bottom nav — 3버튼: [가계부 그룹] [대시보드 바로가기] [분석 그룹] */}
         <nav
-          style={{ background: 'var(--nav-bg)', borderTop: '1px solid var(--nav-border)', padding: '8px 4px', paddingBottom: 'calc(8px + env(safe-area-inset-bottom))', flexShrink: 0 }}
+          style={{ background: 'var(--nav-bg)', borderTop: '1px solid var(--nav-border)', padding: '8px 8px', paddingBottom: 'calc(8px + env(safe-area-inset-bottom))', flexShrink: 0, position: 'relative', zIndex: 42 }}
           className="flex md:hidden"
         >
-          {BOTTOM_TABS.map((item) => {
-            const active = isActive(item.href);
-            const locked = item.href === '/ai-advisor' && aiLocked;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={locked ? (e) => { e.preventDefault(); setModal('ai-locked'); } : undefined}
-                aria-disabled={locked || undefined}
-                style={{
-                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                  padding: '6px 4px', fontSize: '0.6rem', fontWeight: active ? 700 : 500,
-                  color: active && !locked ? 'var(--accent)' : 'var(--text-3)', textDecoration: 'none', borderRadius: 8,
-                }}
-              >
-                <span style={{ fontSize: '1.1rem' }}>{locked ? '🔒' : item.icon}</span>
-                {item.label}
-              </Link>
-            );
-          })}
+          <button
+            type="button"
+            onClick={() => setSheet((s) => (s === 'ledger' ? null : 'ledger'))}
+            aria-haspopup="true"
+            aria-expanded={sheet === 'ledger'}
+            style={mobileTabStyle(sheet === 'ledger' || MOBILE_LEDGER.some((i) => isActive(i.href)))}
+          >
+            <span style={{ fontSize: '1.1rem' }}>≡</span>
+            가계부
+          </button>
+          <Link href="/dashboard" onClick={() => setSheet(null)} style={mobileTabStyle(isActive('/dashboard'))}>
+            <span style={{ fontSize: '1.1rem' }}>◈</span>
+            대시보드
+          </Link>
+          <button
+            type="button"
+            onClick={() => setSheet((s) => (s === 'analysis' ? null : 'analysis'))}
+            aria-haspopup="true"
+            aria-expanded={sheet === 'analysis'}
+            style={mobileTabStyle(sheet === 'analysis' || MOBILE_ANALYSIS.some((i) => isActive(i.href)))}
+          >
+            <span style={{ fontSize: '1.1rem' }}>▲</span>
+            분석
+          </button>
         </nav>
       </div>
 

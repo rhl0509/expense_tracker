@@ -212,6 +212,15 @@ body {
 .logo-link { transition: opacity 0.15s; border-radius: 6px; }
 .logo-link:hover { opacity: 0.75; }
 .logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* 모바일 하단 그룹 시트: 밑에서 위로 살짝 떠오르기 + 배경 페이드 */
+@keyframes mnav-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes mnav-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.mnav-sheet { animation: mnav-rise 220ms cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: bottom center; }
+.mnav-backdrop { animation: mnav-fade-in 160ms ease both; }
+@media (prefers-reduced-motion: reduce) {
+  .mnav-sheet { animation: mnav-fade-in 120ms ease both; }
+}
 /* 헤더 워드마크 테마 전환: 라이트=컬러, 다크=화이트. 한쪽만 보이고 나머지는 숨긴다. */
 [data-theme="light"] .logo-dark { display: none; }
 [data-theme="dark"] .logo-light { display: none; }
