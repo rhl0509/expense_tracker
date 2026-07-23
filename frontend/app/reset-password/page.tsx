@@ -162,7 +162,7 @@ export default function ResetPasswordPage() {
             </button>
           </form>
         ) : (
-          <form onSubmit={(e) => { e.preventDefault(); step === 'verify' ? verify() : sendCode(); }} noValidate>
+          <form onSubmit={(e) => { e.preventDefault(); if (step === 'verify') verify(); else sendCode(); }} noValidate>
             <div className={styles.field}>
               <label htmlFor="userId">아이디</label>
               <input

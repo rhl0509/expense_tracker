@@ -108,7 +108,7 @@ export default function FindIdPage() {
             </button>
           </div>
         ) : (
-          <form onSubmit={(e) => { e.preventDefault(); codeSent ? verify() : sendCode(); }} noValidate>
+          <form onSubmit={(e) => { e.preventDefault(); if (codeSent) verify(); else sendCode(); }} noValidate>
             <div className={styles.field}>
               <label htmlFor="name">이름</label>
               <input

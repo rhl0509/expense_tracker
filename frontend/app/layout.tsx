@@ -51,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko" data-theme="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: FOUC_SCRIPT }} />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font -- App Router 루트 layout 이라 전 페이지에 로드된다. 규칙은 pages/_document 전제라 여기선 오탐. */}
         <link
           href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap"
           rel="stylesheet"

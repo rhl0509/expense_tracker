@@ -6,7 +6,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/components/providers/ToastProvider';
 import ConfirmModal from '@/components/ConfirmModal';
 import { logout, getAiCredential } from '@/lib/api';
 import { THEME_COLORS } from '@/lib/theme';
@@ -151,7 +150,6 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const toast = useToast();
   const qc = useQueryClient();
   const { user, isLoading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
