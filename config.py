@@ -48,3 +48,18 @@ class Config:
 
     # 카드 명세서 자동 수집 스케줄러(하루 1회 폴링) 사용 여부.
     CARD_IMPORT_SCHEDULER = _env_bool('CARD_IMPORT_SCHEDULER', True)
+
+    # ── 로컬 LLM (provider='local') ──────────────────────────────────────
+    # OpenAI 호환 엔드포인트를 내는 로컬 추론 서버 주소. 예: Ollama → http://localhost:11434/v1
+    # **미설정이면 'local' 프로바이더 자체가 비활성**이다. 기본값을 넣지 않는 이유:
+    # 로컬 서버가 없는 곳(배포 인스턴스)에서 'local'을 고를 수 있으면 사용자는 저장에
+    # 성공한 뒤 매 호출마다 연결 실패만 보게 된다.
+    #
+    # 이 값은 **환경변수로만** 정한다. 사용자 입력으로 base_url 을 받으면 서버가 임의
+    # 주소로 요청하는 통로(SSRF)가 되므로, 요청 본문·쿼리에서 절대 읽지 않는다.
+    LOCAL_LLM_URL   = (os.getenv('LOCAL_LLM_URL') or '').strip()
+    LOCAL_LLM_MODEL = (os.getenv('LOCAL_LLM_MODEL') or 'qwen2.5:latest').strip()
+
+    @classmethod
+    def local_llm_enabled(cls) -> bool:
+        return bool(cls.LOCAL_LLM_URL)

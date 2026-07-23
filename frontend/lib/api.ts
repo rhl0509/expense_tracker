@@ -241,6 +241,10 @@ export type AiCredential = {
   configured: boolean;
   provider: string | null;
   key_hint: string | null;
+  // 이 서버가 로컬 추론(LOCAL_LLM_URL)을 쓸 수 있는지. 프론트는 이 값으로 'local'
+  // 선택지를 노출할지 정한다 — 없는 선택지를 띄우면 저장은 되고 호출만 실패한다.
+  local_available: boolean;
+  local_model: string | null;
 };
 
 export const getAiCredential = () => req<AiCredential>('/ai/credentials');
@@ -253,6 +257,16 @@ export const saveAiCredential = (provider: string, apiKey: string) =>
 
 export const deleteAiCredential = () =>
   req<{ message: string; configured: boolean }>('/ai/credentials', { method: 'DELETE' });
+
+// 카드 명세서 수집 시 미분류 가맹점을 AI로 분류할지. 기본 꺼짐(사용자 키로 과금되므로).
+export const getAiAutoCategorize = () =>
+  req<{ enabled: boolean }>('/ai/auto-categorize');
+
+export const setAiAutoCategorize = (enabled: boolean) =>
+  req<{ enabled: boolean }>('/ai/auto-categorize', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
 
 /** text/plain 스트림을 onChunk로 흘려보낸다. (AI analyze/chat 공용) */
 export async function streamText(

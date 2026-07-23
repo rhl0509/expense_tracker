@@ -1,4 +1,4 @@
--- schema.sql — 완성 스키마 (migrations 001~011 이 반영된 전체 구조).
+-- schema.sql — 완성 스키마 (migrations 001~013 이 반영된 전체 구조).
 -- 빈 DB(RDS 등)에 이 파일 하나로 스키마를 세운다. 이후 새 마이그레이션만 순차 적용.
 -- 생성 방식: SHOW CREATE TABLE 덤프 (AUTO_INCREMENT 시작값은 제거).
 
@@ -265,5 +265,29 @@ CREATE TABLE `transactions_archive` (
   KEY `idx_tx_archive_batch` (`batch_id`),
   CONSTRAINT `fk_tx_archive_batch` FOREIGN KEY (`batch_id`) REFERENCES `reset_batches` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='초기화로 아카이브된 거래내역';
+
+-- migrations/012 — 가맹점 자동분류 개인 캐시(장부별)
+CREATE TABLE `merchant_category_map` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `account_book_id` int unsigned NOT NULL,
+  `merchant_key` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '정규화된 가맹점명(소문자·공백접기)',
+  `category_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'categories.name 과 대조해 쓴다',
+  `source` enum('ai','user') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'ai',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_book_merchant` (`account_book_id`,`merchant_key`),
+  CONSTRAINT `fk_mcm_account_book` FOREIGN KEY (`account_book_id`) REFERENCES `account_books` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='가맹점 자동분류 캐시';
+
+-- migrations/013 — 전역 가맹점 카탈로그(장부 무관·선큐레이션). 프라이버시: 가맹점명→카테고리만, "누가 갔는지" 없음.
+CREATE TABLE `merchant_catalog` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `merchant_key` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '정규화된 가맹점명(소문자·공백접기)',
+  `category_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '기본 10 카테고리 중 하나',
+  `source` enum('curated') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'curated' COMMENT 'rho 선큐레이션 전용 — 런타임 승격 없음',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_merchant` (`merchant_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='전역 가맹점 분류 카탈로그(장부 무관·선큐레이션)';
 
 SET FOREIGN_KEY_CHECKS=1;

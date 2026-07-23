@@ -20,8 +20,10 @@ Caddy만 외부에 열리고 frontend·backend는 컨테이너 내부 네트워�
 - `app.py` `BIND_HOST` env (컨테이너에서 `0.0.0.0`)
 - `database/db_connection.py` `DB_SSL_CA` 설정 시 TLS 연결
 - `requirements.txt` 버전 고정
-- `schema.sql` — 빈 DB에 한 번에 적용하는 완성 스키마(migrations 001~010 반영)
+- `schema.sql` — 빈 DB에 한 번에 적용하는 완성 스키마(migrations 001~013 반영)
+- `seeds/merchant_catalog.sql` — 전역 가맹점 분류 카탈로그 데이터(선택). 스키마와 분리된 **데이터** 시드
 - BYOK: 서버 공용 AI 키 없음(사용자별 키). `AI_ENC_KEY`로 암호화(미설정 시 `SECRET_KEY` 파생)
+- 가맹점 자동분류: 런타임은 `merchant_catalog`(전역 캐시) **조회만** 한다 — 배포본은 AI를 호출하지 않는다. 카탈로그는 로컬에서 `tools/curate_merchant_catalog.py`로 선큐레이션(로컬 LLM)해 시드로 넣는다
 
 ## 로컬에서 배포 구성 검증
 
@@ -38,7 +40,8 @@ docker compose up --build
 ### 1. RDS (MySQL) 먼저 — 잠그고 시작
 - db.t3.micro, MySQL 8. **Public access 차단.**
 - 보안그룹: 3306을 **EC2 보안그룹에서만** 허용(전체 공개 금지).
-- 스키마 적재: `schema.sql`(완성 스키마 — 001~010 반영, 전체 테이블 포함)을 빈 RDS 에 한 번 적용: `mysql -h <RDS엔드포인트> -u <user> -p <db> < schema.sql`. 이후 **새로 추가되는** 마이그레이션만 번호순으로 적용한다. (증분 마이그레이션만으론 베이스 테이블이 안 생겨 빈 DB 구축이 실패한다.)
+- 스키마 적재: `schema.sql`(완성 스키마 — 001~013 반영, 전체 테이블 포함)을 빈 RDS 에 한 번 적용: `mysql -h <RDS엔드포인트> -u <user> -p <db> < schema.sql`. 이후 **새로 추가되는** 마이그레이션만 번호순으로 적용한다. (증분 마이그레이션만으론 베이스 테이블이 안 생겨 빈 DB 구축이 실패한다.)
+- (선택) 전역 가맹점 카탈로그 시드: `mysql -h <RDS엔드포인트> -u <user> -p <db> < seeds/merchant_catalog.sql`. **스키마 뒤, 데이터로 적용**한다. 재적용 안전(`ON DUPLICATE KEY UPDATE`). 이 시드가 있어야 신규 사용자가 첫 명세서부터 자동분류 혜택을 본다. 없어도 앱은 정상 동작(룰 + 기타).
 - RDS CA 번들을 EC2에 두고 `DB_SSL_CA`로 지정.
 
 ### 2. EC2

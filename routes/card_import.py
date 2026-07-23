@@ -41,7 +41,8 @@ from database.db_connection import get_db_connection
 from routes.utils import (
     get_user_no, get_default_book_id, api_require_login,
 )
-from card_statement import fetch_all_statements, categorize_merchant, verify_imap_login
+from card_statement import fetch_all_statements, verify_imap_login
+from merchant_classifier import resolve_categories
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -348,7 +349,12 @@ def _insert_rows(user_no, account_book_id, rows) -> int:
     원장 UNIQUE 가 동시 수집 경쟁을 중재한다: 늦은 쪽은 duplicate-key(1062)로 skip.
     반환: 삽입 건수. 실패 시 롤백 후 예외를 그대로 올린다(호출측이 로깅·응답 처리).
     """
-    inserted = 0
+    lines = _ledger_lines(rows)
+    if not lines:
+        return 0
+
+    # 카테고리 해석은 삽입 트랜잭션을 열기 **전에** 끝낸다. AI 폴백(merchant_classifier)이
+    # 네트워크를 타므로, 삽입 루프 안에서 부르면 행 잠금을 쥔 채 외부 응답을 기다리게 된다.
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -357,9 +363,18 @@ def _insert_rows(user_no, account_book_id, rows) -> int:
                 (account_book_id,),
             )
             name_to_id = {row["name"]: row["id"] for row in cursor.fetchall()}
-            fallback_id = name_to_id.get(_FALLBACK_CATEGORY)
+    finally:
+        conn.close()
+    fallback_id = name_to_id.get(_FALLBACK_CATEGORY)
+    category_by_merchant = resolve_categories(
+        account_book_id, user_no, [r["merchant"] for _, _, r in lines], name_to_id.keys(),
+    )
 
-            for fp, seq, r in _ledger_lines(rows):
+    inserted = 0
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            for fp, seq, r in lines:
                 if inserted >= _MAX_IMPORT_INSERT:
                     break
                 try:
@@ -385,7 +400,9 @@ def _insert_rows(user_no, account_book_id, rows) -> int:
                     conn.commit()
                     continue
                 ledger_id = cursor.lastrowid
-                category_id = name_to_id.get(categorize_merchant(r["merchant"]), fallback_id)
+                category_id = name_to_id.get(
+                    category_by_merchant.get(r["merchant"], _FALLBACK_CATEGORY), fallback_id,
+                )
                 relation = f"/{r['relation']}" if r["relation"] else ""
                 memo = f"{r['card']}{relation} · {r['payment_method']} 명세서 자동수집"
                 cursor.execute(
