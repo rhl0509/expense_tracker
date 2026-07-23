@@ -36,7 +36,7 @@ class Config:
     # CORS 허용 오리진(쉼표 구분). 미설정 시 로컬 개발용 기본값.
     CORS_ORIGINS = [
         o.strip()
-        for o in os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
+        for o in os.getenv('CORS_ORIGINS', 'http://localhost:3010,http://127.0.0.1:3010').split(',')
         if o.strip()
     ]
 

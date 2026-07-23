@@ -9,8 +9,8 @@ import { useToast } from '@/components/providers/ToastProvider';
 // 공용 스타일은 아이디 찾기와 같은 파일을 쓴다(같은 카드 톤).
 import styles from '../find-id/recover.module.css';
 
-const LOGO_RATIO = 1116 / 288;
-const LOGO_H = 38;
+const LOGO_RATIO = 763 / 288;
+const LOGO_H = 34;
 const LOGO_W = Math.round(LOGO_H * LOGO_RATIO);
 
 const EMAIL_DOMAINS = [
@@ -42,8 +42,8 @@ export default function ResetPasswordPage() {
   const [step, setStep] = useState<Step>('request');
   const [userId, setUserId] = useState('');
   const [emailLocal, setEmailLocal] = useState('');
-  const [emailDomain, setEmailDomain] = useState('');
-  const [domainPreset, setDomainPreset] = useState('');
+  const [emailDomain, setEmailDomain] = useState('naver.com');
+  const [domainPreset, setDomainPreset] = useState('naver.com');
   const [code, setCode] = useState('');
   const [newPw, setNewPw] = useState('');
   const [newPwConfirm, setNewPwConfirm] = useState('');
@@ -192,7 +192,7 @@ export default function ResetPasswordPage() {
                   className={styles.input}
                   style={{ flex: 1, minWidth: 0 }}
                   type="text"
-                  placeholder="example.com"
+                  placeholder=""
                   value={emailDomain}
                   onChange={(e) => setEmailDomain(e.target.value)}
                   disabled={domainPreset !== ''}

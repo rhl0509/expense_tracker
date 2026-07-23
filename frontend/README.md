@@ -16,8 +16,8 @@ Next.js(App Router) 기반이며, 백엔드(FastAPI)와 연동해 동작합니�
 - 차트: **Chart.js + react-chartjs-2**
 - 스타일: **Tailwind CSS 4**
 - 기타: `@dnd-kit`(드래그 정렬), `react-markdown`(AI 조언 렌더)
-- 백엔드: 상위 폴더 `../` = `expense_tracker` 루트 (FastAPI, 포트 **5000**). 이 프론트는 모노레포의 `frontend/`
-- 통신: 동일 출처 상대경로 호출 → `next.config.ts` rewrites가 백엔드(5000)로 프록시 (CORS 불필요)
+- 백엔드: 상위 폴더 `../` = `expense_tracker` 루트 (FastAPI, 포트 **8010**). 이 프론트는 모노레포의 `frontend/`
+- 통신: 동일 출처 상대경로 호출 → `next.config.ts` rewrites가 백엔드(8010)로 프록시 (CORS 불필요)
 
 ---
 
@@ -77,7 +77,7 @@ Next.js(App Router) 기반이며, 백엔드(FastAPI)와 연동해 동작합니�
 
 ### 사전 요구사항
 - Node.js 18+ (권장: LTS)
-- 백엔드(`../expense_tracker`)가 포트 5000에서 실행 중이어야 데이터 연동됨
+- 백엔드(`../expense_tracker`)가 포트 8010에서 실행 중이어야 데이터 연동됨
 
 ### 설치
 ```bash
@@ -88,29 +88,29 @@ npm install
 ```bash
 npm run dev
 ```
-브라우저에서 [http://localhost:3000](http://localhost:3000) 접속.
+브라우저에서 [http://localhost:3010](http://localhost:3010) 접속.
 
 ### 프론트 + 백엔드 한 번에 실행 (Windows)
 모노레포 루트(`../`)의 편의 스크립트를 실행하세요.
 ```bat
 ..\start_all.bat
 ```
-- 백엔드(`expense_tracker` 루트)를 포트 **5000**, 프론트(`frontend`)를 포트 **3000**으로 각각 새 창에서 실행
+- 백엔드(`expense_tracker` 루트)를 포트 **8010**, 프론트(`frontend`)를 포트 **3010**으로 각각 새 창에서 실행
 - `frontend\node_modules`가 없으면 자동으로 `npm install` 후 `npm run dev`
-- 잠시 후 브라우저에서 `http://localhost:3000`을 자동으로 엽니다
+- 잠시 후 브라우저에서 `http://localhost:3010`을 자동으로 엽니다
 
 ---
 
 ## 백엔드 연동
 
-동일 출처 **상대경로**로 호출하고, `next.config.ts`의 rewrites가 백엔드(5000)로 프록시합니다.
+동일 출처 **상대경로**로 호출하고, `next.config.ts`의 rewrites가 백엔드(8010)로 프록시합니다.
 
 ```ts
 // lib/api.ts — 상대경로(빈 base). rewrites가 프록시하므로 절대 URL·CORS 불필요.
 export const API_BASE = '';
 ```
 ```ts
-// next.config.ts — /auth /transaction /ai /health → http://127.0.0.1:5000
+// next.config.ts — /auth /transaction /ai /health → http://127.0.0.1:8010
 ```
 
 - 모든 요청은 `credentials: 'include'`로 **쿠키 기반 인증**을 사용합니다(동일 출처라 세션 쿠키 자동 전달).
@@ -156,7 +156,7 @@ expense_tracker/frontend/    # 모노레포의 프론트 (백엔드는 상위 ex
 │  ├─ types.ts               # 공용 타입
 │  └─ utils.ts
 ├─ public/
-├─ next.config.ts            # rewrites: /auth /transaction /ai /health → 5000
+├─ next.config.ts            # rewrites: /auth /transaction /ai /health → 8010
 └─ (설정) next.config.ts, tsconfig.json, eslint.config.mjs, postcss.config.mjs
 ```
 

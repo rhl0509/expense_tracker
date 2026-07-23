@@ -1,8 +1,8 @@
-# _stop_gagebu.ps1 — 가계부 백엔드(5000)/프론트(3000) 기존 인스턴스만 안전 종료.
+# _stop_gagebu.ps1 — 가계부 백엔드(8010)/프론트(3010) 기존 인스턴스만 안전 종료.
 # start_all.bat 이 새로 띄우기 전에 호출한다. 단독 실행도 가능(정지만).
 #
 # ■ 왜 포트만으로 안 죽이나
-#   3000/5000 에 다른 프로젝트가 떠 있을 수 있다(실제로 그런 경우가 있었다).
+#   3010/8010 에 다른 프로젝트가 떠 있을 수 있다(실제로 그런 경우가 있었다).
 #   포트만 보고 죽이면 남의 서버를 내린다. 그래서 "이 폴더(expense_tracker)의
 #   프로세스인가" 를 확인한 것만 죽인다.
 #
@@ -37,7 +37,7 @@ function Test-BelongsHere($proc) {
     return $false
 }
 
-foreach ($port in 5000, 3000) {
+foreach ($port in 8010, 3010) {
     $conns = Get-NetTCPConnection -LocalPort $port -State Listen
     if (-not $conns) { Write-Host "  [$port] 점유 없음"; continue }
     foreach ($conn in $conns) {

@@ -14,7 +14,7 @@
 ## 아키텍처
 
 ```
-브라우저 ── Next.js SPA (프론트, :3000) ── 프록시 ──▶ FastAPI (:5000) ──▶ MySQL
+브라우저 ── Next.js SPA (프론트, :3010) ── 프록시 ──▶ FastAPI (:8010) ──▶ MySQL
              동일 출처로 /auth /transaction ...          JSON only
              호출(next.config rewrites)                  Starlette 세션 쿠키
 ```
@@ -78,7 +78,7 @@ mysql -u root -p <DB_NAME> < migrations\002_settings_unique_per_book.sql
 
 ### 4. 실행
 ```bat
-.venv64\Scripts\python.exe app.py     # http://localhost:5000
+.venv64\Scripts\python.exe app.py     # http://localhost:8010
 ```
 
 ## 테스트

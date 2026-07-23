@@ -8,9 +8,9 @@ import { findIdSendCode, findIdVerify } from '@/lib/api';
 import { useToast } from '@/components/providers/ToastProvider';
 import styles from './recover.module.css';
 
-// 브랜드 워드마크 — 로그인/회원가입과 같은 자산·테마 전환(라이트=컬러 / 다크=화이트).
-const LOGO_RATIO = 1116 / 288;
-const LOGO_H = 38;
+// 브랜드 워드마크 — 로그인/회원가입과 같은 자산·규격·테마 전환(라이트=컬러 / 다크=화이트).
+const LOGO_RATIO = 763 / 288;
+const LOGO_H = 34;
 const LOGO_W = Math.round(LOGO_H * LOGO_RATIO);
 
 // 회원가입과 같은 도메인 프리셋.
@@ -25,8 +25,8 @@ export default function FindIdPage() {
 
   const [name, setName] = useState('');
   const [emailLocal, setEmailLocal] = useState('');
-  const [emailDomain, setEmailDomain] = useState('');
-  const [domainPreset, setDomainPreset] = useState('');
+  const [emailDomain, setEmailDomain] = useState('naver.com');
+  const [domainPreset, setDomainPreset] = useState('naver.com');
   const [code, setCode] = useState('');
 
   const [codeSent, setCodeSent] = useState(false);
@@ -138,7 +138,7 @@ export default function FindIdPage() {
                   className={styles.input}
                   style={{ flex: 1, minWidth: 0 }}
                   type="text"
-                  placeholder="example.com"
+                  placeholder=""
                   value={emailDomain}
                   onChange={(e) => setEmailDomain(e.target.value)}
                   disabled={domainPreset !== ''}

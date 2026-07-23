@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="가계부 API", lifespan=lifespan)
 
 # ── 미들웨어 ──
-# 프론트(Next.js)는 dev 시 localhost:3000, rewrites 프록시 시 동일 출처.
+# 프론트(Next.js)는 dev 시 localhost:3010, rewrites 프록시 시 동일 출처.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=Config.CORS_ORIGINS,
@@ -89,7 +89,7 @@ async def root():
 
 if __name__ == '__main__':
     import uvicorn
-    port = int(os.getenv('PORT', '5000'))
+    port = int(os.getenv('PORT', '8010'))
     # 컨테이너·배포에선 BIND_HOST=0.0.0.0. 기본은 로컬 전용(127.0.0.1).
     host = os.getenv('BIND_HOST', '127.0.0.1')
     uvicorn.run("app:app", host=host, port=port, reload=False)

@@ -26,8 +26,6 @@
   box-shadow: var(--card-shadow);
 }
 .brand { display: flex; justify-content: center; margin-bottom: 8px; }
-/* 광학 보정: 로봇 아이콘이 왼쪽에 있어 워드마크가 왼쪽으로 쏠려 보인다. 살짝 오른쪽으로 민다. */
-.brand img { transform: translateX(4px); }
 .subtitle { text-align: center; color: var(--text-3); font-size: 13.5px; margin: 4px 0 26px; }
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 13px; font-weight: 700; color: var(--text-2); margin: 0 2px 7px; }

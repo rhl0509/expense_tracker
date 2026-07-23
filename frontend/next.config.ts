@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const BACKEND = process.env.BACKEND_URL || "http://127.0.0.1:5000";
+const BACKEND = process.env.BACKEND_URL || "http://127.0.0.1:8010";
 
 const nextConfig: NextConfig = {
   // 배포: 최소 런타임만 담은 standalone 서버로 빌드. dev 에는 영향 없다.
@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
     "desktop-7du8ple.tail641172.ts.net",
   ],
   async rewrites() {
-    // 브라우저는 동일 출처(localhost:3000)로 호출 → 세션 쿠키 그대로 전달.
+    // 브라우저는 동일 출처(localhost:3010)로 호출 → 세션 쿠키 그대로 전달.
     // Next 서버가 백엔드(FastAPI)로 프록시한다.
     return [
       { source: "/auth/:path*", destination: `${BACKEND}/auth/:path*` },

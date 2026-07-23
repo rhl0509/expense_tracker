@@ -16,7 +16,7 @@ import styles from './register.module.css';
 
 // 브랜드 워드마크 — 로그인과 같은 자산·테마 전환(라이트=컬러 / 다크=화이트).
 const LOGO_RATIO = 763 / 288;
-const LOGO_H = 40;
+const LOGO_H = 34;
 const LOGO_W = Math.round(LOGO_H * LOGO_RATIO);
 
 // 자릿수를 묶는 법이 나라마다 달라(한국 3-4-4, 미국 (201) 555-0123, 프랑스 2-2-2-2-2 …)
@@ -48,10 +48,10 @@ export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({
     user_id: '', password: '', password_confirm: '', name: '',
-    email_local: '', email_domain: '', phone: '',
+    email_local: '', email_domain: 'naver.com', phone: '',
   });
-  // '' = 직접입력(기본값). 프리셋을 고르면 도메인 칸이 그 값으로 잠긴다.
-  const [domainPreset, setDomainPreset] = useState('');
+  // 기본값 naver.com. '직접입력'('')을 고르면 도메인 칸이 열려 사용자가 새로 쓴다.
+  const [domainPreset, setDomainPreset] = useState('naver.com');
   const [countryIso, setCountryIso] = useState(DEFAULT_ISO);
   // 검증 실패 문구. 제출 버튼 바로 위에 절대위치로 띄운다(카드 높이 불변). 3초 후 자동으로 사라진다.
   const [error, setError] = useState('');
@@ -318,7 +318,7 @@ export default function RegisterPage() {
                   className={styles.input}
                   style={{ flex: 1, minWidth: 0 }}
                   type="text"
-                  placeholder="example.com"
+                  placeholder=""
                   value={form.email_domain}
                   onChange={e => set('email_domain', e.target.value)}
                   disabled={domainPreset !== ''}
