@@ -81,7 +81,9 @@ const TITLES: Record<string, string> = {
   '/my': '마이페이지',   // 내 정보(구 /settings)를 여기로 합쳤다
 };
 
-function ThemeToggle({ asMenuItem }: { asMenuItem?: boolean } = {}) {
+// 다크/라이트 토글. 데스크톱·모바일 모두 계정 메뉴 안에서 다른 항목과 같은 행 스타일로
+// 렌더한다(토글해도 메뉴는 열린 채 유지해 바뀌는 걸 볼 수 있게).
+function ThemeToggle() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   useEffect(() => {
     // FOUC 스크립트가 저장값/기기설정을 반영해 이미 확정한 결과를 그대로 읽는다.
@@ -94,24 +96,9 @@ function ThemeToggle({ asMenuItem }: { asMenuItem?: boolean } = {}) {
     document.documentElement.setAttribute('data-theme', next);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLORS[next]);
   };
-  // asMenuItem: 계정 메뉴 안에서 다른 항목과 같은 행 스타일로 렌더한다(토글해도 메뉴는 열린 채 유지).
-  if (asMenuItem) {
-    return (
-      <button onClick={toggle} className="menu-item" style={menuItemStyle}>
-        {theme === 'dark' ? '☀ 라이트 모드' : '◑ 다크 모드'}
-      </button>
-    );
-  }
   return (
-    <button
-      onClick={toggle}
-      style={{
-        background: 'var(--accent-soft)', border: '1px solid var(--card-border)', borderRadius: 99,
-        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
-        fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-2)', fontFamily: 'inherit',
-      }}
-    >
-      {theme === 'dark' ? '☀ 라이트' : '◑ 다크'}
+    <button onClick={toggle} className="menu-item" style={menuItemStyle}>
+      {theme === 'dark' ? '☀ 라이트 모드' : '◑ 다크 모드'}
     </button>
   );
 }
@@ -248,6 +235,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 ⚙ 마이페이지
               </Link>
               <div style={{ height: 1, background: 'var(--card-border)' }} />
+              <ThemeToggle />
+              <div style={{ height: 1, background: 'var(--card-border)' }} />
               <button
                 style={{ ...menuItemStyle, color: 'var(--expense)' }}
                 onClick={() => { setMenuOpen(false); setModal('logout'); }}
@@ -257,10 +246,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <ThemeToggle />
-            <button className="btn btn-ghost btn-sm" onClick={() => setMenuOpen((v) => !v)}>계정 ▾</button>
-          </div>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ width: '100%' }}
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-haspopup="true"
+            aria-expanded={menuOpen}
+          >
+            계정 ▾
+          </button>
         </div>
       </aside>
 
@@ -337,7 +331,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </Link>
                 )}
                 <div style={{ height: 1, background: 'var(--card-border)' }} />
-                <ThemeToggle asMenuItem />
+                <ThemeToggle />
                 <div style={{ height: 1, background: 'var(--card-border)' }} />
                 <button
                   style={{ ...menuItemStyle, color: 'var(--expense)' }}
