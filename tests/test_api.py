@@ -5,21 +5,38 @@
 teardown에서 모두 삭제한다. 공유 자원(account_book=2의 settings)은 스냅샷 후 복원한다.
 """
 import hashlib
+import json
 import os
 import uuid
+from base64 import b64encode
 from datetime import datetime
 from unittest.mock import patch
 
+import itsdangerous
 import pytest
 from starlette.testclient import TestClient
 
 from app import app
+from config import Config
 from database.db_connection import get_db_connection
 
 # 가입 비밀번호 규칙(대소문자·숫자·특수문자 포함 8자 이상)을 만족해야 register가 201을 준다.
 TEST_PW = "Test1234!"
 # 약관·개인정보 동의(필수) — 없으면 register가 400을 준다.
 CONSENT = {"terms_agreed": True, "privacy_agreed": True}
+
+
+def _mark_email_verified(c, email):
+    """register 의 이메일 인증 전제조건을 세션에 직접 심는다.
+
+    회원가입은 서버측에서 세션의 email_verified 가 제출 이메일과 일치할 것을 요구한다
+    (auth.py). 실제 흐름(send-email-code → verify-email-code)은 6자리 코드를 메일로만
+    보내고, 이미 가입된 이메일은 send-email-code 가 409로 막아 중복 이메일 테스트가 이
+    전제를 못 만든다. 그래서 SessionMiddleware 와 같은 방식으로 서명한 쿠키에
+    email_verified 를 직접 심어 전제만 충족시킨다(실메일 발송 없음)."""
+    signer = itsdangerous.TimestampSigner(str(Config.SECRET_KEY))
+    raw = b64encode(json.dumps({"email_verified": email}).encode("utf-8"))
+    c.cookies.set("session", signer.sign(raw).decode("utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -34,6 +51,7 @@ def client(created):
     uid = "pytest_" + uuid.uuid4().hex[:8]
 
     # 1) 회원가입 (자동으로 전용 가구 + 기본 카테고리 생성됨)
+    _mark_email_verified(c, f"{uid}@test.com")
     r = c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": "테스트유저", "email": f"{uid}@test.com", **CONSENT})
     assert r.status_code == 201, r.text
 
@@ -309,6 +327,7 @@ def _register_login(prefix):
     """새 유저를 만들고 로그인한 (client, uid, book_id, member_id)."""
     c = TestClient(app)
     uid = prefix + uuid.uuid4().hex[:8]
+    _mark_email_verified(c, f"{uid}@test.com")
     r = c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": uid, "email": f"{uid}@test.com", **CONSENT})
     assert r.status_code == 201, r.text
     r = c.post("/auth/login", json={"user_id": uid, "password": TEST_PW})
@@ -520,7 +539,9 @@ def test_register_validation():
     base = {"user_id": "regval_" + uuid.uuid4().hex[:6], "password": TEST_PW, "name": "n", "email": "a@b.com", **CONSENT}
 
     def r(**over):
-        return c.post("/auth/register", json={**base, **over})
+        payload = {**base, **over}
+        _mark_email_verified(c, payload["email"])
+        return c.post("/auth/register", json=payload)
 
     assert r(password="Ab1!").status_code == 400          # 8자 미만
     assert r(password="TEST1234!").status_code == 400     # 소문자 없음
@@ -552,7 +573,10 @@ def test_register_rejects_duplicates():
                 "email": f"fresh{uuid.uuid4().hex[:6]}@test.com",
                 **CONSENT,
             }
-            return fresh.post("/auth/register", json={**body, **over})
+            payload = {**body, **over}
+            # 중복 이메일도 인증 전제를 통과해야 register 의 409(중복) 로직에 도달한다.
+            _mark_email_verified(fresh, payload["email"])
+            return fresh.post("/auth/register", json=payload)
 
         r = reg(email=f"{uid}@test.com")
         assert r.status_code == 409, r.text
@@ -581,7 +605,9 @@ def test_register_phone_is_optional():
 
     def reg(user_id, **over):
         body = {"user_id": user_id, "password": TEST_PW, "name": "폰검사", "email": f"{user_id}@test.com", **CONSENT}
-        return c.post("/auth/register", json={**body, **over})
+        payload = {**body, **over}
+        _mark_email_verified(c, payload["email"])
+        return c.post("/auth/register", json=payload)
 
     try:
         assert reg(uid_with, phone="+821012345678").status_code == 201
@@ -601,6 +627,7 @@ def test_register_records_consents():
     uid = "cons_" + uuid.uuid4().hex[:6]
     c = TestClient(app)
     try:
+        _mark_email_verified(c, f"{uid}@test.com")
         r = c.post("/auth/register", json={
             "user_id": uid, "password": TEST_PW, "name": "동의", "email": f"{uid}@test.com", **CONSENT,
         })
@@ -639,6 +666,7 @@ def test_profile():
     c = TestClient(app)
     try:
         assert TestClient(app).get("/auth/profile").status_code == 401   # 비로그인
+        _mark_email_verified(c, f"{uid}@test.com")
         c.post("/auth/register", json={
             "user_id": uid, "password": TEST_PW, "name": "프로필",
             "email": f"{uid}@test.com", "phone": "+821012345678", **CONSENT,
@@ -660,6 +688,7 @@ def test_update_phone():
     c = TestClient(app)
     try:
         assert TestClient(app).post("/auth/update-phone", json={"phone": "+821011112222"}).status_code == 401
+        _mark_email_verified(c, f"{uid}@test.com")
         c.post("/auth/register", json={"user_id": uid, "password": TEST_PW, "name": "폰", "email": f"{uid}@test.com", **CONSENT})
         c.post("/auth/login", json={"user_id": uid, "password": TEST_PW})
         assert c.get("/auth/profile").json()["phone"] is None   # 가입 시 미등록
