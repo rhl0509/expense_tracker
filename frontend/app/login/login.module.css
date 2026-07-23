@@ -1,0 +1,77 @@
+/* 로그인 화면 전용 스타일. CSS Module로 두는 이유: App Router client 컴포넌트의 styled-jsx는
+   SSR에 인라인되지 않고 JS 주입이라 첫 프레임에 스타일 없는 폼이 번쩍인다(FOUC). CSS Module은
+   별도 .css로 추출돼 <head> 링크로 렌더 블로킹 로드되므로 첫 프레임부터 스타일이 잡힌다.
+   표면·글자·입력창 색은 테마 토큰, 브랜드 강조는 테마 불변 --income. */
+
+.wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(900px 500px at 15% -10%, rgba(16, 185, 129, 0.10), transparent 60%),
+    radial-gradient(800px 500px at 110% 120%, rgba(16, 185, 129, 0.08), transparent 55%),
+    var(--body-bg);
+  color: var(--text);
+  font-family: inherit;
+}
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 24px;
+  padding: 38px 32px 30px;
+  box-shadow: var(--card-shadow);
+}
+.brand { display: flex; justify-content: center; margin-bottom: 8px; }
+.subtitle { text-align: center; color: var(--text-3); font-size: 13.5px; margin: 4px 0 26px; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 13px; font-weight: 700; color: var(--text-2); margin: 0 2px 7px; }
+.input {
+  position: relative; display: flex; align-items: center;
+  background: var(--input-bg); border: 1.5px solid var(--input-border); border-radius: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.input:focus-within { border-color: var(--income); background: var(--card-bg); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15); }
+.input .ic { width: 44px; display: flex; justify-content: center; color: var(--text-3); flex: 0 0 auto; }
+.input input {
+  flex: 1; border: 0; background: transparent; outline: none;
+  font-size: 15px; color: var(--text); padding: 14px 12px 14px 0; font-family: inherit;
+}
+.input input::placeholder { color: var(--text-3); }
+.toggle {
+  border: 0; background: transparent; cursor: pointer; color: var(--text-3);
+  padding: 0 14px; height: 100%; display: flex; align-items: center; font-size: 12.5px; font-weight: 600;
+}
+.toggle:hover { color: var(--income); }
+.row { display: flex; align-items: center; justify-content: space-between; margin: 6px 2px 22px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; user-select: none; }
+.check input { accent-color: var(--income); width: 16px; height: 16px; }
+.links { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+.linkBtn { border: 0; background: transparent; cursor: pointer; font-family: inherit; font-size: 12.5px; color: var(--text-3); padding: 0; }
+.linkBtn:hover { color: var(--income); }
+.sep { color: var(--card-border); }
+
+/* 로그인/회원가입 버튼: 앱 공통 .btn 골격을 본떠 로그인 화면 안에 자립적으로 둔다. 로그인 화면은
+   브랜드 그린 CTA를 유지한다. 그린 배경은 테마 불변이라 글자색을 어둡게 고정해 대비를 확보한다
+   (--income 위 ~6.5:1). */
+.btn {
+  width: 100%; border: 0; border-radius: 14px; cursor: pointer;
+  font-family: inherit; font-size: 15.5px; font-weight: 800; padding: 15px 16px;
+  transition: transform 0.05s, box-shadow 0.15s, opacity 0.15s, background 0.15s;
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.6; cursor: default; }
+.btnPrimary {
+  color: #07271b; background: var(--income);
+  box-shadow: 0 10px 22px rgba(16, 185, 129, 0.28);
+}
+.btnPrimary:hover:not(:disabled) { opacity: 0.92; box-shadow: 0 12px 26px rgba(16, 185, 129, 0.36); }
+.btnGhost {
+  margin-top: 11px; background: var(--card-bg); color: var(--income);
+  border: 1.5px solid var(--income); box-shadow: none;
+}
+.btnGhost:hover { background: var(--hover-bg); }
+.foot { text-align: center; font-size: 12px; color: var(--text-3); margin-top: 20px; }

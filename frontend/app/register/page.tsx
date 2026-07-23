@@ -1,13 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { register, checkUserId } from '@/lib/api';
 import NoticeModal from '@/components/NoticeModal';
+import LegalAgreementModal from '@/components/LegalAgreementModal';
+import TermsContent from '@/components/legal/TermsContent';
+import PrivacyContent from '@/components/legal/PrivacyContent';
 import { AsYouType, parsePhoneNumberFromString } from 'libphonenumber-js';
 import type { CountryCode } from 'libphonenumber-js';
 import { COUNTRY_GROUPS, DEFAULT_ISO, findCountry } from '@/lib/countries';
+import styles from './register.module.css';
+
+// 브랜드 워드마크 — 로그인과 같은 자산·테마 전환(라이트=컬러 / 다크=화이트).
+const LOGO_RATIO = 1116 / 288;
+const LOGO_H = 40;
+const LOGO_W = Math.round(LOGO_H * LOGO_RATIO);
 
 // 자릿수를 묶는 법이 나라마다 달라(한국 3-4-4, 미국 (201) 555-0123, 프랑스 2-2-2-2-2 …)
 // 손으로 쓰지 않고 libphonenumber에 맡긴다. 검증·E.164 변환도 같은 출처를 쓴다.
@@ -32,10 +42,6 @@ const EMAIL_DOMAINS = [
   'kakao.com', 'nate.com', 'outlook.com', 'icloud.com',
 ];
 
-const labelStyle: React.CSSProperties = {
-  fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', display: 'block', marginBottom: 6,
-};
-
 type Notice = { variant: 'success' | 'error'; title: string; message: string };
 
 export default function RegisterPage() {
@@ -47,15 +53,29 @@ export default function RegisterPage() {
   // '' = 직접입력(기본값). 프리셋을 고르면 도메인 칸이 그 값으로 잠긴다.
   const [domainPreset, setDomainPreset] = useState('');
   const [countryIso, setCountryIso] = useState(DEFAULT_ISO);
+  // 검증 실패 문구. 제출 버튼 바로 위에 절대위치로 띄운다(카드 높이 불변). 3초 후 자동으로 사라진다.
   const [error, setError] = useState('');
+  const [errKey, setErrKey] = useState(0); // 같은 문구를 다시 띄워도 타이머·흔들림이 재시작되게 하는 키
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [checkingId, setCheckingId] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [agreePrivacy, setAgreePrivacy] = useState(false);
+  // 열려 있는 약관 모달('terms'|'privacy'|null). '보기'를 누르면 새 페이지 대신 모달로 연다.
+  const [legalModal, setLegalModal] = useState<null | 'terms' | 'privacy'>(null);
   // 중복확인을 통과한 아이디 값. 입력이 바뀌면 아래 idVerified가 저절로 풀린다.
   const [checkedId, setCheckedId] = useState('');
   const idVerified = checkedId !== '' && checkedId === form.user_id.trim();
+
+  // 경고를 띄운다. errKey를 함께 올려 같은 문구여도 타이머 재시작 + 흔들림 재생이 되게 한다.
+  const showError = (msg: string) => { setError(msg); setErrKey(k => k + 1); };
+
+  // 경고는 3초 뒤 자동으로 사라진다(errKey가 바뀔 때마다 타이머 재설정).
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(''), 3000);
+    return () => clearTimeout(t);
+  }, [error, errKey]);
 
   const set = (key: keyof typeof form, value: string) => setForm(f => ({ ...f, [key]: value }));
 
@@ -95,17 +115,25 @@ export default function RegisterPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!form.user_id.trim()) {
+      showError('아이디를 입력해주세요.');
+      return;
+    }
     if (!idVerified) {
-      setError('아이디 중복확인을 해주세요.');
+      showError('아이디 중복확인을 해주세요.');
       return;
     }
     const pwError = passwordError(form.password);
     if (pwError) {
-      setError(pwError);
+      showError(pwError);
       return;
     }
     if (form.password !== form.password_confirm) {
-      setError('비밀번호가 일치하지 않습니다.');
+      showError('비밀번호가 일치하지 않습니다.');
+      return;
+    }
+    if (!form.name.trim()) {
+      showError('이름을 입력해주세요.');
       return;
     }
     const phone = form.phone.trim();
@@ -114,18 +142,18 @@ export default function RegisterPage() {
       const parsed = parsePhoneNumberFromString(phone, countryIso as CountryCode);
       if (!parsed?.isValid()) {
         const example = findCountry(countryIso)?.example;
-        setError(`핸드폰 번호가 올바르지 않습니다.${example ? ` (예: ${example})` : ''}`);
+        showError(`핸드폰 번호가 올바르지 않습니다.${example ? ` (예: ${example})` : ''}`);
         return;
       }
       phoneE164 = parsed.number; // 이미 E.164
     }
     const email = `${form.email_local.trim()}@${form.email_domain.trim()}`;
     if (!form.email_local.trim() || !form.email_domain.trim()) {
-      setError('이메일을 입력해주세요.');
+      showError('이메일을 입력해주세요.');
       return;
     }
     if (!agreeTerms || !agreePrivacy) {
-      setError('이용약관과 개인정보처리방침에 동의해주세요.');
+      showError('이용약관과 개인정보처리방침에 동의해주세요.');
       return;
     }
     setLoading(true);
@@ -141,7 +169,7 @@ export default function RegisterPage() {
       });
       router.replace('/login');
     } catch (err: unknown) {
-      setError((err as Error).message || '회원가입에 실패했습니다.');
+      showError((err as Error).message || '회원가입에 실패했습니다.');
     } finally {
       setLoading(false);
     }
@@ -155,10 +183,10 @@ export default function RegisterPage() {
     action?: React.ReactNode,
   ) => (
     <div>
-      <label style={labelStyle}>{label}</label>
+      <label className={styles.label}>{label}</label>
       <div style={{ position: 'relative' }}>
         <input
-          className="field"
+          className={styles.input}
           // 버튼이 입력칸 안에 겹쳐 있으므로 글자가 버튼 아래로 들어가지 않게 오른쪽을 비워둔다.
           style={action ? { paddingRight: 92 } : undefined}
           type={type}
@@ -179,50 +207,41 @@ export default function RegisterPage() {
   const checkBtn = (label: string, onClick: () => void, busy = false) => (
     <button
       type="button"
-      className="btn btn-ghost btn-sm"
+      className={`${styles.btn} ${styles.btnGhost} ${styles.btnSm}`}
       onClick={onClick}
       disabled={busy}
-      // '확인 중...'으로 라벨이 바뀔 때 버튼 폭이 흔들리지 않게 고정한다.
-      style={{ whiteSpace: 'nowrap', minWidth: 78 }}
     >
       {busy ? '확인 중...' : label}
     </button>
   );
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      {/* 이메일 줄이 아이디·@·도메인·도메인선택 4단이라 로그인(400)보다 넓게 잡는다. */}
-      <div style={{ width: '100%', maxWidth: 520 }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ fontSize: '2rem', marginBottom: 8 }}>✦</div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            AI 가계부
-          </h1>
+    <main className={styles.wrap}>
+      <div className={styles.shell}>
+        <div className={styles.header}>
+          <div className={styles.brand}>
+            <Image src="/header_color.png" alt="AI가계부" width={LOGO_W} height={LOGO_H} className="logo-light" priority />
+            <Image src="/header_white.png" alt="AI가계부" width={LOGO_W} height={LOGO_H} className="logo-dark" priority />
+          </div>
+          <p className={styles.subtitle}>몇 가지만 입력하면 바로 시작할 수 있어요</p>
         </div>
 
-        <div className="card" style={{ padding: 32 }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text)', marginBottom: 24, marginTop: 0 }}>
-            회원가입
-          </h2>
-          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className={styles.card}>
+          {/* noValidate: 브라우저 기본 검증 말풍선(페이지와 안 어울림)을 끄고 아래 submit()의
+              앱 스타일 경고로 안내한다. required 는 접근성 힌트로 남겨둔다. */}
+          <form onSubmit={submit} noValidate className={styles.form}>
             {field('user_id', '아이디', 'text', '사용할 아이디', checkBtn('중복확인', checkId, checkingId))}
-            {idVerified && (
-              <p style={{ margin: '-8px 0 0', fontSize: '0.75rem', color: 'var(--success)' }}>
-                ✓ 사용 가능한 아이디입니다
-              </p>
-            )}
+            {idVerified && <p className={styles.ok}>✓ 사용 가능한 아이디입니다</p>}
             {field('password', '비밀번호', 'password', '비밀번호')}
-            <p style={{ margin: '-8px 0 0', fontSize: '0.72rem', color: 'var(--text-3)' }}>
-              {PW_HINT}
-            </p>
+            <p className={styles.hint}>{PW_HINT}</p>
             {field('password_confirm', '비밀번호 확인', 'password', '비밀번호 재입력', checkBtn('확인', checkPassword))}
             {field('name', '이름', 'text', '이름')}
 
             <div>
-              <label style={labelStyle}>이메일</label>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <label className={styles.label}>이메일</label>
+              <div className={styles.rowLine}>
                 <input
-                  className="field"
+                  className={styles.input}
                   style={{ flex: 1, minWidth: 0 }}
                   type="text"
                   placeholder="아이디"
@@ -230,10 +249,10 @@ export default function RegisterPage() {
                   onChange={e => set('email_local', e.target.value)}
                   required
                 />
-                <span style={{ flexShrink: 0, fontSize: '0.85rem', color: 'var(--text-3)' }}>@</span>
+                <span className={styles.at}>@</span>
                 <input
-                  className="field"
-                  style={{ flex: 1, minWidth: 0, opacity: domainPreset ? 0.6 : 1 }}
+                  className={styles.input}
+                  style={{ flex: 1, minWidth: 0 }}
                   type="text"
                   placeholder="example.com"
                   value={form.email_domain}
@@ -242,7 +261,7 @@ export default function RegisterPage() {
                   required
                 />
                 <select
-                  className="field"
+                  className={styles.input}
                   style={{ flex: 1, minWidth: 0 }}
                   value={domainPreset}
                   onChange={e => {
@@ -259,10 +278,10 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label style={labelStyle}>핸드폰 번호 (선택)</label>
-              <div style={{ display: 'flex', gap: 6 }}>
+              <label className={styles.label}>핸드폰 번호 (선택)</label>
+              <div className={styles.rowLine}>
                 <select
-                  className="field"
+                  className={styles.input}
                   style={{ flex: '0 0 170px' }}
                   value={countryIso}
                   onChange={e => {
@@ -282,7 +301,7 @@ export default function RegisterPage() {
                   ))}
                 </select>
                 <input
-                  className="field"
+                  className={styles.input}
                   style={{ flex: 1, minWidth: 0 }}
                   type="tel"
                   placeholder={findCountry(countryIso)?.example ?? '번호 입력'}
@@ -292,45 +311,50 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <div style={{ border: '1px solid var(--card-border)', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className={styles.agree}>
               {([
-                { checked: agreeTerms, toggle: setAgreeTerms, label: '이용약관 동의', href: '/terms' },
-                { checked: agreePrivacy, toggle: setAgreePrivacy, label: '개인정보 수집·이용 동의', href: '/privacy' },
-              ] as const).map(({ checked, toggle, label, href }) => (
-                <div key={href} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', color: 'var(--text)', cursor: 'pointer', flex: 1 }}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={e => toggle(e.target.checked)}
-                      style={{ accentColor: 'var(--accent)', width: 15, height: 15 }}
-                    />
-                    <span>{label} <span style={{ color: 'var(--text-3)' }}>(필수)</span></span>
+                { checked: agreeTerms, toggle: setAgreeTerms, label: '이용약관 동의', doc: 'terms' },
+                { checked: agreePrivacy, toggle: setAgreePrivacy, label: '개인정보 수집·이용 동의', doc: 'privacy' },
+              ] as const).map(({ checked, toggle, label, doc }) => (
+                <div key={doc} className={styles.agreeRow}>
+                  <label className={styles.agreeLabel}>
+                    <input type="checkbox" checked={checked} onChange={e => toggle(e.target.checked)} />
+                    <span>{label} <span className={styles.req}>(필수)</span></span>
                   </label>
-                  {/* 작성 중인 폼이 날아가지 않게 문서는 새 탭으로 연다. */}
-                  <Link href={href} target="_blank" style={{ fontSize: '0.78rem', color: 'var(--accent)', fontWeight: 600, textDecoration: 'none', flexShrink: 0 }}>
-                    보기
-                  </Link>
+                  {/* 작성 중인 폼이 날아가지 않게 문서는 새 페이지가 아니라 모달로 연다. */}
+                  <button type="button" className={styles.viewBtn} onClick={() => setLegalModal(doc)}>보기</button>
                 </div>
               ))}
             </div>
 
-            {error && (
-              <div style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 8, padding: '10px 14px', fontSize: '0.82rem', color: '#f43f5e' }}>
-                {error}
-              </div>
-            )}
-
-            <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', marginTop: 4 }}>
-              {loading ? '처리 중...' : '회원가입'}
-            </button>
+            {/* 제출 버튼 바로 위 인라인 경고. 절대위치라 카드 높이를 밀지 않고, 방금 누른 버튼 위에
+                떠서 바로 눈에 띈다(등장 시 살짝 흔들려 주의를 끈다). 3초 후 자동으로 사라진다. */}
+            <div style={{ position: 'relative', marginTop: 4 }}>
+              {error && (
+                <div
+                  key={errKey}
+                  className="reg-error"
+                  role="alert"
+                  style={{
+                    position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, right: 0,
+                    background: 'var(--card-bg)', border: '1px solid rgba(244,63,94,0.5)',
+                    borderRadius: 8, padding: '9px 12px', fontSize: '0.8rem', fontWeight: 600,
+                    color: '#f43f5e', textAlign: 'center', boxShadow: '0 6px 18px rgba(0,0,0,0.22)',
+                    zIndex: 5,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+              <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={loading}>
+                {loading ? '처리 중...' : '회원가입'}
+              </button>
+            </div>
           </form>
 
-          <p style={{ textAlign: 'center', marginTop: 20, fontSize: '0.82rem', color: 'var(--text-3)', marginBottom: 0 }}>
+          <p className={styles.footer}>
             이미 계정이 있으신가요?{' '}
-            <Link href="/login" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>
-              로그인
-            </Link>
+            <Link href="/login" className={styles.loginLink}>로그인</Link>
           </p>
         </div>
       </div>
@@ -342,6 +366,24 @@ export default function RegisterPage() {
         message={notice?.message ?? ''}
         onClose={() => setNotice(null)}
       />
-    </div>
+
+      <LegalAgreementModal
+        open={legalModal === 'terms'}
+        title="이용약관"
+        onAgree={() => { setAgreeTerms(true); setLegalModal(null); }}
+        onClose={() => setLegalModal(null)}
+      >
+        <TermsContent />
+      </LegalAgreementModal>
+
+      <LegalAgreementModal
+        open={legalModal === 'privacy'}
+        title="개인정보 수집·이용"
+        onAgree={() => { setAgreePrivacy(true); setLegalModal(null); }}
+        onClose={() => setLegalModal(null)}
+      >
+        <PrivacyContent />
+      </LegalAgreementModal>
+    </main>
   );
 }

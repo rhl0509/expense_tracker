@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import Image from 'next/image';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/providers/ToastProvider';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -38,13 +39,23 @@ const BOTTOM_TABS: NavItem[] = [
 // 로고는 홈(기록하기) 링크다. <button>이 아니라 <Link>인 이유: 하는 일이 페이지 이동이라
 // 새 탭 열기·가운데 클릭이 되고 스크린리더가 목적지 있는 링크로 읽는다.
 const logoStyle: React.CSSProperties = {
-  display: 'inline-block',
-  fontWeight: 800,
-  fontSize: '1rem',
-  color: 'var(--text)',
-  letterSpacing: '-0.5px',
+  display: 'inline-flex',
+  alignItems: 'center',
   textDecoration: 'none',
 };
+
+// 가로형 워드마크(로봇 + "AI가계부"). 라이트=컬러, 다크=화이트를 CSS(.logo-light/.logo-dark)로
+// 전환한다. data-theme는 FOUC 부트스트랩이 페인트 전에 확정하므로 깜빡임이 없다. 원본 1116×288.
+const LOGO_RATIO = 1116 / 288;
+function HeaderLogo({ height }: { height: number }) {
+  const width = Math.round(height * LOGO_RATIO);
+  return (
+    <>
+      <Image src="/header_color.png" alt="" width={width} height={height} className="logo-light" priority />
+      <Image src="/header_white.png" alt="" width={width} height={height} className="logo-dark" priority />
+    </>
+  );
+}
 
 const TITLES: Record<string, string> = {
   '/record': '기록하기', '/dashboard': '대시보드', '/transactions': '거래 내역',
@@ -129,6 +140,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const toast = useToast();
+  const qc = useQueryClient();
   const { user, isLoading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modal, setModal] = useState<'logout' | 'ai-locked' | null>(null);
@@ -147,6 +159,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     await logout();
+    // 세션을 지웠으니 캐시된 사용자 데이터(me·거래·카테고리 등)를 모두 비운다.
+    // 이걸 안 하면 stale 'me' 캐시가 아직 로그인 상태로 읽혀 /login 이 다시 /record 로 튕긴다.
+    qc.clear();
     router.replace('/login');
   };
 
@@ -172,7 +187,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         <div style={{ padding: '0 20px 18px', borderBottom: '1px solid var(--nav-border)' }}>
           <Link href="/record" className="logo-link" style={logoStyle} aria-label="AI 가계부 홈 — 기록하기로 이동">
-            <span style={{ color: 'var(--brand)' }}>✦</span> AI 가계부
+            <HeaderLogo height={28} />
           </Link>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: 3 }}>{user.user_name}</div>
         </div>
@@ -246,8 +261,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           }}
           className="flex md:hidden"
         >
-          <Link href="/record" className="logo-link" style={{ ...logoStyle, fontSize: '0.9rem' }} aria-label="AI 가계부 홈 — 기록하기로 이동">
-            <span style={{ color: 'var(--brand)' }}>✦</span> AI 가계부
+          <Link href="/record" className="logo-link" style={logoStyle} aria-label="AI 가계부 홈 — 기록하기로 이동">
+            <HeaderLogo height={24} />
           </Link>
           <ThemeToggle />
         </header>

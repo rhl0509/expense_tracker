@@ -1,0 +1,101 @@
+/* 회원가입 화면 스타일. 로그인(login.module.css)과 같은 디자인 언어를 공유한다 —
+   그린 글로우 배경 · 워드마크 · 둥근 카드 · 그린 CTA · 그린 포커스 입력.
+   로그인보다 폼이 길고 넓어(이메일 4단) 카드 폭만 넓히고 상단 정렬한다. */
+
+.wrap {
+  min-height: 100vh;
+  display: flex;
+  padding: 40px 24px;
+  background:
+    radial-gradient(900px 500px at 15% -10%, rgba(16, 185, 129, 0.10), transparent 60%),
+    radial-gradient(800px 500px at 110% 120%, rgba(16, 185, 129, 0.08), transparent 55%),
+    var(--body-bg);
+  color: var(--text);
+  font-family: inherit;
+}
+/* margin:auto 로 안전 중앙정렬 — 뷰포트에 들어오면 로그인처럼 세로 중앙, 폼이 화면보다 길면
+   auto 마진이 0으로 접혀 상단이 잘리지 않고 위 여백부터 시작해 스크롤된다. */
+.shell { width: 100%; max-width: 520px; margin: auto; }
+
+.header { text-align: center; margin-bottom: 20px; }
+.brand { display: flex; justify-content: center; margin-bottom: 8px; }
+.subtitle { color: var(--text-3); font-size: 13.5px; margin: 4px 0 0; }
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 24px;
+  padding: 32px;
+  box-shadow: var(--card-shadow);
+}
+.form { display: flex; flex-direction: column; gap: 14px; }
+
+.label { display: block; font-size: 13px; font-weight: 700; color: var(--text-2); margin: 0 2px 7px; }
+
+/* 입력창 — 로그인의 입력 컨테이너와 같은 톤(둥근 14 · 1.5px 테두리 · 그린 포커스 링). */
+.input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1.5px solid var(--input-border);
+  border-radius: 14px;
+  color: var(--text);
+  padding: 13px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.input::placeholder { color: var(--text-3); }
+.input:focus { border-color: var(--income); background: var(--card-bg); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15); }
+.input:disabled { opacity: 0.6; }
+/* 드롭다운 목록은 브라우저가 흰 배경으로 그려 다크모드 글자가 묻힌다 — 불투명 카드색으로 깐다. */
+.input option, .input optgroup { background: var(--card-bg); color: var(--text); }
+
+.hint { margin: -8px 0 0; font-size: 0.72rem; color: var(--text-3); }
+.ok { margin: -8px 0 0; font-size: 0.75rem; color: var(--income); font-weight: 600; }
+
+/* 이메일 4단 / 핸드폰 2단 가로 배치 */
+.rowLine { display: flex; gap: 6px; align-items: center; }
+.at { flex-shrink: 0; font-size: 0.85rem; color: var(--text-3); }
+
+/* 약관 동의 박스 */
+.agree {
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agreeRow { display: flex; align-items: center; gap: 8px; }
+.agreeLabel { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--text); cursor: pointer; flex: 1; }
+.agreeLabel input { accent-color: var(--income); width: 15px; height: 15px; }
+.req { color: var(--text-3); }
+.viewBtn { border: 0; background: transparent; font-size: 0.78rem; color: var(--income); font-weight: 600; cursor: pointer; flex-shrink: 0; padding: 0; }
+.viewBtn:hover { text-decoration: underline; }
+
+/* 버튼 — 로그인과 같은 그린 CTA. 그린 배경은 테마 불변이라 글자를 어둡게 고정(대비 확보). */
+.btn {
+  border: 0; border-radius: 14px; cursor: pointer;
+  font-family: inherit; font-weight: 800;
+  transition: transform 0.05s, box-shadow 0.15s, opacity 0.15s, background 0.15s;
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.6; cursor: default; }
+.btnPrimary {
+  width: 100%; padding: 15px 16px; font-size: 15.5px;
+  color: #07271b; background: var(--income);
+  box-shadow: 0 10px 22px rgba(16, 185, 129, 0.28);
+}
+.btnPrimary:hover:not(:disabled) { opacity: 0.92; box-shadow: 0 12px 26px rgba(16, 185, 129, 0.36); }
+/* 중복확인·확인 같은 작은 보조 버튼: 그린 아웃라인 */
+.btnGhost {
+  background: transparent; color: var(--income);
+  border: 1.5px solid var(--income);
+}
+.btnGhost:hover:not(:disabled) { background: var(--hover-bg); }
+.btnSm { padding: 8px 12px; font-size: 0.8rem; border-radius: 10px; white-space: nowrap; min-width: 78px; }
+
+.footer { text-align: center; margin: 20px 0 0; font-size: 0.82rem; color: var(--text-3); }
+.loginLink { color: var(--income); font-weight: 600; text-decoration: none; }
+.loginLink:hover { text-decoration: underline; }

@@ -208,11 +208,26 @@ body {
 .font-mono { font-family: 'Outfit', 'JetBrains Mono', monospace; }
 .text-brand { color: var(--brand); }
 
-/* 로고(홈 링크) — 누를 수 있다는 신호. 색 대신 투명도를 쓰면 브랜드색이 흐려지므로
-   ✦ 아이콘은 그대로 두고 전체를 살짝 띄운다. */
+/* 로고(홈 링크) — 누를 수 있다는 신호. 색을 바꾸는 대신 전체를 살짝 띄운다. */
 .logo-link { transition: opacity 0.15s; border-radius: 6px; }
 .logo-link:hover { opacity: 0.75; }
 .logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* 헤더 워드마크 테마 전환: 라이트=컬러, 다크=화이트. 한쪽만 보이고 나머지는 숨긴다. */
+[data-theme="light"] .logo-dark { display: none; }
+[data-theme="dark"] .logo-light { display: none; }
+
+/* 회원가입 제출 버튼 위 인라인 경고 — 등장 시 페이드+한 번 흔들려 시선을 끈다. */
+@keyframes regErrorIn {
+  0%   { opacity: 0; transform: translateX(0) translateY(3px); }
+  35%  { opacity: 1; transform: translateX(-4px) translateY(0); }
+  55%  { transform: translateX(4px); }
+  75%  { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+.reg-error { animation: regErrorIn 0.34s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .reg-error { animation: none; }
+}
 .text-up    { color: var(--income); }
 .text-down  { color: var(--expense); }
 .text-muted { color: var(--text-3); }

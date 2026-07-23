@@ -62,6 +62,7 @@ export default function MyPage() {
     e.preventDefault();
     setError('');
     // 서버도 같은 규칙을 강제하지만, 왕복 전에 알려준다.
+    if (!current) return setError('현재 비밀번호를 입력하세요.');
     const err = passwordError(next);
     if (err) return setError(err);
     if (next !== confirm) return setError('새 비밀번호가 일치하지 않습니다.');
@@ -93,7 +94,8 @@ export default function MyPage() {
 
         {/* 비밀번호 변경 */}
         <SectionCard icon="lock" title="비밀번호 변경">
-          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* noValidate: 브라우저 기본 검증 말풍선을 끄고 아래 submit()의 앱 스타일 에러로 안내한다. */}
+          <form onSubmit={submit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
               <label htmlFor="pw-current" style={labelStyle}>현재 비밀번호</label>
               <input id="pw-current" className="field" type="password" autoComplete="current-password"
