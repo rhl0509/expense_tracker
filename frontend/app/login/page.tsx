@@ -11,7 +11,7 @@ import styles from './login.module.css';
 
 // 브랜드 워드마크(로봇 + "AI가계부"). 라이트=컬러 / 다크=화이트를 CSS(.logo-light/.logo-dark)로
 // 전환한다 — AppShell 헤더 로고와 같은 단일 자산을 쓴다(별도 SVG 로고를 두지 않는다).
-const LOGO_RATIO = 1116 / 288;
+const LOGO_RATIO = 763 / 288;
 const LOGO_H = 40;
 const LOGO_W = Math.round(LOGO_H * LOGO_RATIO);
 

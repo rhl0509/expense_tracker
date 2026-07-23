@@ -15,7 +15,7 @@ import { COUNTRY_GROUPS, DEFAULT_ISO, findCountry } from '@/lib/countries';
 import styles from './register.module.css';
 
 // 브랜드 워드마크 — 로그인과 같은 자산·테마 전환(라이트=컬러 / 다크=화이트).
-const LOGO_RATIO = 1116 / 288;
+const LOGO_RATIO = 763 / 288;
 const LOGO_H = 40;
 const LOGO_W = Math.round(LOGO_H * LOGO_RATIO);
 

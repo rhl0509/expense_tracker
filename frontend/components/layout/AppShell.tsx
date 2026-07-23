@@ -46,8 +46,20 @@ const logoStyle: React.CSSProperties = {
 
 // 가로형 워드마크(로봇 + "AI가계부"). 라이트=컬러, 다크=화이트를 CSS(.logo-light/.logo-dark)로
 // 전환한다. data-theme는 FOUC 부트스트랩이 페인트 전에 확정하므로 깜빡임이 없다. 원본 1116×288.
-const LOGO_RATIO = 1116 / 288;
-function HeaderLogo({ height }: { height: number }) {
+const LOGO_RATIO = 763 / 288;
+// fill=true 면 부모 폭에 꽉 차게(height auto, 비율 유지) 채운다. 아니면 height 기준 고정 크기.
+// fill 일 때는 원본 해상도(763×288)를 intrinsic 으로 넘겨야 한다 — 작은 값을 주면 next/image 가
+// 저해상 최적화본을 만든 뒤 CSS 로 늘려 깨져 보인다(업스케일). sizes 로 실제 슬롯 폭을 힌트한다.
+function HeaderLogo({ height = 28, fill }: { height?: number; fill?: boolean }) {
+  if (fill) {
+    const fillStyle = { width: '100%', height: 'auto' } as const;
+    return (
+      <>
+        <Image src="/header_color.png" alt="" width={763} height={288} sizes="220px" className="logo-light" style={fillStyle} priority />
+        <Image src="/header_white.png" alt="" width={763} height={288} sizes="220px" className="logo-dark" style={fillStyle} priority />
+      </>
+    );
+  }
   const width = Math.round(height * LOGO_RATIO);
   return (
     <>
@@ -186,8 +198,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         className="hidden md:flex"
       >
         <div style={{ padding: '0 20px 18px', borderBottom: '1px solid var(--nav-border)' }}>
-          <Link href="/record" className="logo-link" style={logoStyle} aria-label="AI 가계부 홈 — 기록하기로 이동">
-            <HeaderLogo height={28} />
+          <Link href="/record" className="logo-link" style={{ display: 'block', textDecoration: 'none' }} aria-label="AI 가계부 홈 — 기록하기로 이동">
+            <HeaderLogo fill />
           </Link>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: 3 }}>{user.user_name}</div>
         </div>
@@ -304,7 +316,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         variant="danger"
         icon="⎋"
         title="로그아웃 하시겠어요?"
-        message={<>현재 세션이 종료되고<br />로그인 페이지로 이동합니다.</>}
+        message=""
         confirmText="로그아웃"
         onConfirm={handleLogout}
         onCancel={() => setModal(null)}
