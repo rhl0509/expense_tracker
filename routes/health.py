@@ -39,11 +39,8 @@ async def health_check():
         import shutil
         total, used, free = shutil.disk_usage("/")
         free_gb = round(free / (1024 ** 3), 1)
-        components["disk"] = {
-            "ok": free_gb > 1.0,
-            "free_gb": free_gb,
-            "total_gb": round(total / (1024 ** 3), 1),
-        }
+        # 무인증 공개 응답이라 용량 수치(free_gb/total_gb)는 노출하지 않는다 — ok 여부만.
+        components["disk"] = {"ok": free_gb > 1.0}
         if free_gb <= 1.0:
             all_ok = False
     except Exception as e:

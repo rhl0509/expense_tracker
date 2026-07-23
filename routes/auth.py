@@ -672,7 +672,10 @@ async def login(request: Request):
                 request.session['account_book_id'] = book_id
                 return JSONResponse({"message": "로그인 성공"}, status_code=200)
             else:
-                _login_record_failure(user_id)
+                # user_id 가 falsy 면 기록하지 않는다 — _login_blocked 의 정리는 `if user_id`
+                # 안에서만 돌아, falsy 키(_login_fails[None]/[''])는 정리되지 않고 누적된다.
+                if user_id:
+                    _login_record_failure(user_id)
                 return JSONResponse({"error": "아이디 또는 비밀번호가 틀립니다."}, status_code=401)
     except Exception as e:
         logger.exception("로그인 실패")

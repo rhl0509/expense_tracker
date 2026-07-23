@@ -66,6 +66,12 @@ async def add_transaction(request: Request, _=Depends(api_require_login)):
         return JSONResponse({"error": "내용이 너무 깁니다."}, status_code=400)
     if len(memo) > 500:
         return JSONResponse({"error": "메모가 너무 깁니다."}, status_code=400)
+    # payment_method·user 는 DB varchar(50). 초과·비문자열이면 strict MySQL 에서 500 이 되므로
+    # 다른 라우터(add_recurring·stock_ingest)와 대칭으로 여기서 400 으로 거른다.
+    if not isinstance(payment_method, str) or len(payment_method) > 50:
+        return JSONResponse({"error": "결제수단이 올바르지 않습니다."}, status_code=400)
+    if not isinstance(user_tag, str) or len(user_tag) > 50:
+        return JSONResponse({"error": "사용자 이름이 올바르지 않습니다."}, status_code=400)
     try:
         amount = Decimal(str(data.get('amount')))
         # Decimal('NaN')/Infinity 는 생성자를 통과한다 — 아래 비교(<, >)에서 InvalidOperation
@@ -492,9 +498,9 @@ async def delete_category(category_id: int, request: Request, _=Depends(api_requ
             if sub_categories:
                 sub_ids = [s['id'] for s in sub_categories]
                 placeholders = ','.join(['%s'] * len(sub_ids))
-                cursor.execute(f"UPDATE transactions SET category_id = NULL WHERE category_id IN ({placeholders})", sub_ids)
+                cursor.execute(f"UPDATE transactions SET category_id = NULL WHERE category_id IN ({placeholders}) AND account_book_id = %s", sub_ids + [account_book_id])
                 cursor.execute("DELETE FROM categories WHERE parent_id = %s AND account_book_id = %s", (category_id, account_book_id))
-            cursor.execute("UPDATE transactions SET category_id = NULL WHERE category_id = %s", (category_id,))
+            cursor.execute("UPDATE transactions SET category_id = NULL WHERE category_id = %s AND account_book_id = %s", (category_id, account_book_id))
             cursor.execute("DELETE FROM categories WHERE id = %s AND account_book_id = %s", (category_id, account_book_id))
         conn.commit()
         return {"message": "deleted"}
