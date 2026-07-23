@@ -7,9 +7,8 @@
 ![Multi--tenancy](https://img.shields.io/badge/Multi--tenancy-8E44AD)
 ![Household Budget](https://img.shields.io/badge/Household%20Budget-2E7D32)
 
-가계부(개인·가구 공유) 앱의 백엔드. **순수 JSON API**만 제공하며, 화면은
-별도 저장소의 Next.js SPA([expense_frontend](https://github.com/rhl0509/expense_frontend))가
-담당한다. 페이지 렌더링(Jinja2)은 없다.
+가계부(개인·가구 공유) 앱. **백엔드는 순수 JSON API**만 제공하며, 화면은
+같은 저장소의 `frontend/`(Next.js SPA)가 담당한다(모노레포). 페이지 렌더링(Jinja2)은 없다.
 
 ## 아키텍처
 
@@ -64,16 +63,17 @@ tests/test_api.py pytest 통합 테스트(TestClient + 실 MySQL)
 |-----|------|------|
 | `SECRET_KEY` | ✅ | 세션 서명 키. 미설정 시 서버가 시작되지 않음 |
 | `DB_HOST` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | ✅ | MySQL 접속 정보 |
-| `ANTHROPIC_API_KEY` | 선택 | AI 어드바이저(`/ai/*`)용. `expense_ai.py`가 import 시점에 클라이언트를 생성하므로 AI 기능을 쓰려면 필요 |
+| `AI_ENC_KEY` | 선택 | AI 어드바이저는 **BYOK**(사용자별 API 키)로 작동한다 — 서버 공용 AI 키는 없다. 각 사용자가 마이페이지에서 등록한 키를 이 값으로 Fernet 암호화해 저장한다(미설정 시 `SECRET_KEY` 파생 키로 폴백) |
+| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` | 선택 | 회원가입 이메일 인증·비밀번호 찾기 코드 발송용. 미설정 시 로컬에선 코드를 로그로 대체하고, 프로덕션(`SESSION_COOKIE_SECURE=true`)에선 발송을 실패시킨다 |
 
 > `.env`는 절대 커밋하지 않는다(`.gitignore`로 제외됨).
 
 ### 3. DB 마이그레이션
-`migrations/`의 SQL을 순서대로 적용한다.
+`migrations/`의 SQL을 **번호 순서대로 전부**(001 ~ 013) 적용한다.
 
 ```bat
 mysql -u root -p <DB_NAME> < migrations\001_multitenancy.sql
-mysql -u root -p <DB_NAME> < migrations\002_settings_unique_per_book.sql
+:: 002 ~ 013 까지 같은 방식으로 순서대로 적용
 ```
 
 ### 4. 실행

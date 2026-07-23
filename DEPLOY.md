@@ -78,9 +78,8 @@ docker compose up -d --build
 - [ ] `SESSION_COOKIE_SECURE=true` + Caddy HTTPS 동작 (②)
 - [ ] RDS public 차단 + 보안그룹 EC2 한정 + `DB_SSL_CA` 설정 (③)
 - [ ] `.env`는 git·이미지에 포함 금지(`.dockerignore`·`.gitignore` 확인)
-- [ ] 이메일 인증은 아직 미구현(레이트리밋은 Caddy 앞단으로 적용됨) — 봇 가입 완전 차단하려면 추가
+- [ ] `SMTP_HOST/SMTP_USER/SMTP_PASSWORD` 설정(회원가입 이메일 인증·비밀번호 찾기 코드 발송). 미설정 시 프로덕션에선 발송이 실패한다(mailer fail-closed) — 인증/복구 흐름이 SMTP에 의존
 
 ## 아직 안 한 것 (배포 후/별도)
 
-- 회원가입 이메일 인증 (레이트리밋은 Caddy 앞단으로 적용됨 — 이메일 검증까지 하면 봇 가입 완전 차단)
 - AWS 프리티어 개편(신규 계정 6개월 크레딧) — 6개월 후 계정 만료 시 데모 URL 소멸 대비 재배포 계획
