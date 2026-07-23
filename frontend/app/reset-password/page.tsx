@@ -197,17 +197,17 @@ export default function ResetPasswordPage() {
                   onChange={(e) => setEmailDomain(e.target.value)}
                   disabled={domainPreset !== ''}
                 />
-                <select
-                  className={styles.input}
-                  style={{ flex: '0 0 118px' }}
-                  value={domainPreset}
-                  onChange={(e) => { setDomainPreset(e.target.value); setEmailDomain(e.target.value); }}
-                  aria-label="이메일 도메인 선택"
-                >
-                  <option value="">직접입력</option>
-                  {EMAIL_DOMAINS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
               </div>
+              <select
+                className={styles.input}
+                style={{ width: '100%', marginTop: 8 }}
+                value={domainPreset}
+                onChange={(e) => { setDomainPreset(e.target.value); setEmailDomain(e.target.value); }}
+                aria-label="이메일 도메인 선택"
+              >
+                <option value="">직접입력</option>
+                {EMAIL_DOMAINS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
             </div>
 
             {step === 'verify' && (
