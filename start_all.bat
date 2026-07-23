@@ -19,6 +19,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_stop_gagebu.ps1"
 REM   포트 해제 대기
 timeout /t 2 > nul
 
+REM ── 포트 가용성 확인 ────────────────────────────────────────────────
+REM   정리 후에도 8010/3010 이 남아 있으면 = 남의 프로젝트가 점유 중이다
+REM   (_stop_gagebu 는 가계부 소속만 죽인다). next dev/uvicorn 은 포트가 막히면
+REM   자동으로 옮기지 않고 하드 에러로 죽으므로, 조용히 실패하기 전에 미리 막는다.
+echo [0.5] 8010/3010 포트 가용성 확인...
+REM   주의: 포트가 비면 Get-NetTCPConnection 이 "매칭 없음" 비종료 에러로 $?를 false 로
+REM   만들어, 명시적 exit 가 없으면 powershell 이 exit 1 로 끝나(=오탐 중단) 버린다.
+REM   그래서 마지막에 exit 0/1 을 명시해 종료코드를 확정한다.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$bad=$false; foreach($p in 8010,3010){ $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if($c){ $cl = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $c.OwningProcess)).CommandLine; Write-Host ('  [사용중] 포트 ' + $p + ' -- PID ' + $c.OwningProcess + ' : ' + $cl); $bad=$true } }; if($bad){ exit 1 } else { exit 0 }"
+if errorlevel 1 (
+    echo.
+    echo  [중단] 8010 또는 3010 포트를 다른 프로젝트가 사용 중입니다.
+    echo         위에 표시된 프로세스를 먼저 종료하거나 포트를 비운 뒤 다시 실행하세요.
+    echo         가계부 소속 인스턴스는 방금 정리됐으니 남은 점유자는 다른 프로젝트입니다.
+    echo.
+    pause
+    exit /b 1
+)
+
 REM ── 백엔드 (FastAPI, 포트 8010) ──
 REM   start 가 부모 배치의 현재 폴더(%~dp0)와 환경변수(PYTHONUTF8 등)를 그대로 상속하므로
 REM   중첩 따옴표 없이 /d 로 작업 폴더만 지정한다.
