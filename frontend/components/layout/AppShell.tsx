@@ -196,8 +196,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         className="hidden md:flex"
       >
         <div style={{ padding: '0 20px 18px', borderBottom: '1px solid var(--nav-border)' }}>
-          <Link href="/record" className="logo-link" style={{ display: 'block', textDecoration: 'none' }} aria-label="AI 가계부 홈 — 기록하기로 이동">
-            <HeaderLogo fill />
+          <Link href="/record" className="logo-link" style={{ display: 'inline-flex', textDecoration: 'none' }} aria-label="AI 가계부 홈 — 기록하기로 이동">
+            <HeaderLogo height={54} />
           </Link>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: 3 }}>{user.user_name}</div>
         </div>
