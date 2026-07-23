@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getTransactions, deleteTransaction, importCardStatement } from '@/lib/api';
 import { usePaymentMethods } from '@/hooks/useSettings';
-import { fmtFull } from '@/lib/utils';
+import { fmtFull, invalidateTx } from '@/lib/utils';
 import type { Transaction } from '@/lib/types';
 
 const TYPE_LABEL: Record<string, string> = { income: '수입', expense: '지출' };
@@ -60,12 +60,12 @@ export default function TransactionsPage() {
 
   const delMut = useMutation({
     mutationFn: deleteTransaction,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['transactions'] }); qc.invalidateQueries({ queryKey: ['summary'] }); },
+    onSuccess: () => invalidateTx(qc),
   });
 
   const importMut = useMutation({
     mutationFn: () => importCardStatement(40),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['transactions'] }); qc.invalidateQueries({ queryKey: ['summary'] }); },
+    onSuccess: () => invalidateTx(qc),
   });
 
   const rows = (transactions as Transaction[]).map((t) => ({

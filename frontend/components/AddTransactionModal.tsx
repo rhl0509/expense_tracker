@@ -6,7 +6,7 @@ import { addTransaction } from '@/lib/api';
 import { useCategories } from '@/hooks/useCategories';
 import { useUserLabels, usePaymentMethods } from '@/hooks/useSettings';
 import { useToast } from '@/components/providers/ToastProvider';
-import { commaInput, unComma, todayStr } from '@/lib/utils';
+import { commaInput, unComma, todayStr, invalidateTx } from '@/lib/utils';
 
 export default function AddTransactionModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
@@ -32,8 +32,7 @@ export default function AddTransactionModal({ onClose }: { onClose: () => void }
   const mutation = useMutation({
     mutationFn: addTransaction,
     onSuccess: () => {
-      ['transactions', 'summary', 'yearly-summary', 'category-chart', 'payment-summary', 'recent', 'monthly-summary']
-        .forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      invalidateTx(qc);
       toast('저장되었습니다.', 'success');
       onClose();
     },

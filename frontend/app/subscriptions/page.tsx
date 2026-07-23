@@ -6,7 +6,7 @@ import { getRecurring, addRecurring, deleteRecurring, processRecurring } from '@
 import { useCategories } from '@/hooks/useCategories';
 import { useUserLabels, usePaymentMethods } from '@/hooks/useSettings';
 import { useToast } from '@/components/providers/ToastProvider';
-import { fmtFull, commaInput, unComma } from '@/lib/utils';
+import { fmtFull, commaInput, unComma, invalidateTx } from '@/lib/utils';
 
 export default function SubscriptionsPage() {
   const qc = useQueryClient();
@@ -46,8 +46,7 @@ export default function SubscriptionsPage() {
   const processMut = useMutation({
     mutationFn: processRecurring,
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['summary'] });
+      invalidateTx(qc);
       toast(`${data.processed}건 처리 완료`, 'success');
     },
   });
@@ -146,7 +145,7 @@ export default function SubscriptionsPage() {
                   1~28 이라는 제약이 라벨에만 있으므로 라벨을 유지한다. */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-3)', marginBottom: 4 }}>결제일 (1~28)</label>
-                <input className="field" type="number" min={1} max={28} placeholder="예: 25" value={form.repeat_day} onChange={(e) => setF('repeat_day', e.target.value)} />
+                <input className="field" type="number" min={1} max={31} placeholder="예: 25 (말일 결제는 31)" value={form.repeat_day} onChange={(e) => setF('repeat_day', e.target.value)} />
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>

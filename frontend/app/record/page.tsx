@@ -6,7 +6,7 @@ import { getSummary, getPaymentSummary, addTransaction } from '@/lib/api';
 import { useCategories } from '@/hooks/useCategories';
 import { useUserLabels, usePaymentMethods } from '@/hooks/useSettings';
 import { useToast } from '@/components/providers/ToastProvider';
-import { fmt, fmtFull, commaInput, unComma, todayStr } from '@/lib/utils';
+import { fmt, fmtFull, commaInput, unComma, todayStr, invalidateTx } from '@/lib/utils';
 
 type FormState = {
   user: string;
@@ -93,11 +93,7 @@ export default function RecordPage() {
   const addMut = useMutation({
     mutationFn: addTransaction,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['summary'] });
-      qc.invalidateQueries({ queryKey: ['yearly-summary'] });
-      qc.invalidateQueries({ queryKey: ['payment-summary'] });
-      qc.invalidateQueries({ queryKey: ['category-chart'] });
+      invalidateTx(qc);
       setForm((f) => ({ ...f, title: '', amount: '' }));
       toast('저장되었습니다.', 'success');
     },

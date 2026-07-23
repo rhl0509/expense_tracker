@@ -1,3 +1,18 @@
+import type { QueryClient } from '@tanstack/react-query';
+
+// 거래를 추가/수정/삭제하면 파생되는 모든 목록·요약 쿼리 키를 한 곳에 모은다. 화면마다
+// 무효화 대상이 어긋나(검색=tx-list, 대시보드=*-summary/chart) stale 되던 드리프트를 막는다.
+export const TX_QUERY_KEYS = [
+  'transactions', 'tx-list', 'recent', 'summary',
+  'yearly-summary', 'monthly-summary', 'payment-summary', 'category-chart',
+] as const;
+
+// 거래를 바꾸는 mutation 의 onSuccess 에서 호출 — 위 키를 모두 무효화한다(접두 매칭이라
+// ['monthly-summary', year] 같은 인자 변형도 함께 무효화된다).
+export function invalidateTx(qc: QueryClient) {
+  TX_QUERY_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+}
+
 export function fmt(n: number): string {
   const abs = Math.abs(n);
   if (abs >= 100000000) return (abs / 100000000).toFixed(1).replace('.0', '') + '억원';
