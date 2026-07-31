@@ -68,11 +68,13 @@ BIND_HOST=0.0.0.0
 ```
 APP_BASE_URL=https://<도메인>          # redirect_uri 기준. 미설정이면 소셜 전체 비활성
 GOOGLE_CLIENT_ID= / GOOGLE_CLIENT_SECRET=
-KAKAO_CLIENT_ID= / KAKAO_CLIENT_SECRET=   # 카카오 콘솔에서 client_secret '사용' 필수
+KAKAO_CLIENT_ID= / KAKAO_CLIENT_SECRET=   # 앱 설정 → 플랫폼 키 (시크릿은 기본 발급·활성)
+NAVER_CLIENT_ID= / NAVER_CLIENT_SECRET=
 ```
 - 각 프로바이더 콘솔에 `https://<도메인>/auth/social/{provider}/callback` 을 redirect_uri 로 등록한다.
-- 카카오 이메일(account_email) 동의항목은 비즈 앱 심사가 필요할 수 있다 — 승인 전에도 동작한다
-  (이메일이 안 오면 가입 시 자체 이메일 인증으로 대체). 네이버는 검수 확인 후 후속.
+- 카카오 이메일(account_email) 동의항목은 비즈 앱 전환이 필요하다 — 전환 전에도 동작한다
+  (이메일이 안 오면 가입 시 자체 이메일 인증으로 대체). 네이버 이메일도 검증 주장이 없어 같은 취급.
+- 네이버는 검수 신청 전까지 등록된 테스터만 로그인될 수 있다(콘솔에서 확인 — ⚠️ 검증 필요).
 
 ### 4. 기동 + DNS
 ```bash

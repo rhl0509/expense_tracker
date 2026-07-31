@@ -55,6 +55,12 @@ const SOCIAL_ICONS: Record<string, ReactNode> = {
       <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
     </svg>
   ),
+  // 네이버 N 마크. 초록 버튼 위라 흰색 단색으로 쓴다.
+  naver: (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#ffffff" d="M14.2 12.6 9.4 6H6v12h3.8v-6.6l4.8 6.6H18V6h-3.8z" />
+    </svg>
+  ),
   // 카카오 말풍선 심볼. 노란 버튼 위에 올라가므로 지정색(#191919) 단색으로 쓴다.
   kakao: (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">

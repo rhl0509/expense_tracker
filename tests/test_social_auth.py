@@ -185,6 +185,43 @@ def test_start_sets_tx_cookie_and_pkce():
 # ──────────────────────────────────────────────────────────────────
 # 콜백 공격 표면
 # ──────────────────────────────────────────────────────────────────
+@pytest.fixture
+def naver_on(monkeypatch):
+    """네이버는 기본 미설정(미설정 프로바이더 숨김 테스트를 살리려고) — 필요한 테스트만 켠다."""
+    monkeypatch.setattr(Config, 'NAVER_CLIENT_ID', 'nid')
+    monkeypatch.setattr(Config, 'NAVER_CLIENT_SECRET', 'nsecret')
+
+
+def test_naver_start_uses_auth_type_not_prompt(naver_on, cleanup):
+    """네이버에는 prompt 가 없다 — 연결 모드에서 auth_type=reauthenticate 로 다시 고르게 한다."""
+    _, uid, _ = _insert_password_member(cleanup)
+    c = TestClient(app)
+    c.post('/auth/login', json={'user_id': uid, 'password': 'Test1234!'})
+    r = c.get('/auth/social/naver/link', follow_redirects=False)
+    q = parse_qs(urlparse(r.headers['location']).query)
+    assert r.headers['location'].startswith('https://nid.naver.com/oauth2.0/authorize')
+    assert q['auth_type'] == ['reauthenticate'] and 'prompt' not in q
+    # PKCE 미확인이라 끈 상태 — 켜지면 이 단언이 알려준다
+    assert 'code_challenge' not in q and 'scope' not in q
+
+
+def test_naver_email_treated_unverified(naver_on, monkeypatch, cleanup):
+    """네이버는 이메일 검증 여부를 알려주지 않는다 → 미검증 취급이라 자체 인증을 거친다."""
+    c = TestClient(app)
+    nid = 'nv_' + uuid.uuid4().hex[:10]
+    _mock_profile(monkeypatch, {
+        'resultcode': '00', 'message': 'success',
+        'response': {'id': nid, 'email': f'{nid}@naver.com', 'name': '네이버러'},
+    })
+    state, _ = _start(c, 'naver')
+    r = _callback(c, 'naver', state)
+    assert r.headers['location'] == '/register/social'
+    body = c.get('/auth/social/pending').json()
+    # 프로바이더가 준 이메일이라도 검증 주장이 없으면 본인 확인을 요구한다
+    assert body['needs_email'] is True and body['email'] is None
+    assert body['name'] == '네이버러'
+
+
 def test_kakao_start_sends_no_scope():
     """카카오는 scope 를 보내지 않는다 — 콘솔에서 '사용 안 함'인 항목을 요청하면 KOE205 로
     거절당한다(account_email 은 비즈 앱 전까지 '권한 없음'). 되살아나면 로그인이 통째로 막힌다."""

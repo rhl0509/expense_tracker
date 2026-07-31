@@ -65,6 +65,22 @@ def _parse_google(payload: dict) -> tuple[str | None, str | None, bool, str | No
     )
 
 
+def _parse_naver(payload: dict) -> tuple[str | None, str | None, bool, str | None]:
+    """openapi /v1/nid/me → 동일 튜플. 응답이 'response' 로 한 겹 감싸여 온다.
+
+    네이버는 이메일의 검증 여부를 알려주지 않는다 → 항상 미검증으로 본다(카카오와 같은 취급).
+    미검증 이메일은 members.email 에 들어가지 않고, 가입 시 자체 인증을 거친다.
+    """
+    resp = payload.get('response') or {}
+    naver_id = resp.get('id')
+    return (
+        str(naver_id) if naver_id else None,
+        (resp.get('email') or '').strip() or None,
+        False,
+        (resp.get('name') or resp.get('nickname') or '').strip() or None,
+    )
+
+
 def _parse_kakao(payload: dict) -> tuple[str | None, str | None, bool, str | None]:
     """kapi /v2/user/me → 동일 튜플. 이메일은 동의항목 미승인·미동의로 없을 수 있다."""
     account = payload.get('kakao_account') or {}
@@ -85,8 +101,8 @@ def _parse_kakao(payload: dict) -> tuple[str | None, str | None, bool, str | Non
 
 
 # 프로바이더 추가 = 여기 항목 1개 + _parse_* 함수 1개. 핸들러는 provider 를 문자열로만
-# 다루고 분기하지 않는다. 네이버(후속): authorize/token nid.naver.com/oauth2.0/*,
-# userinfo openapi.naver.com/v1/nid/me — PKCE 지원 미확인이라 붙일 때 pkce 플래그로 결정.
+# 다루고 분기하지 않는다. 'select' 는 연결 모드에서 "계정을 다시 고르게" 만드는 파라미터로,
+# 표준이 아니라 프로바이더마다 이름이 달라 여기 둔다.
 _PROVIDERS = {
     'google': {
         'authorize': 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -94,6 +110,7 @@ _PROVIDERS = {
         'userinfo': 'https://openidconnect.googleapis.com/v1/userinfo',
         'scope': 'openid email profile',
         'pkce': True,
+        'select': {'prompt': 'select_account'},
         'parse': _parse_google,
     },
     'kakao': {
@@ -106,7 +123,21 @@ _PROVIDERS = {
         # 설정된 항목으로 동의 화면이 뜨므로 콘솔 설정과 코드가 어긋날 일이 없다.
         'scope': '',
         'pkce': True,
+        'select': {'prompt': 'select_account'},
         'parse': _parse_kakao,
+    },
+    'naver': {
+        'authorize': 'https://nid.naver.com/oauth2.0/authorize',
+        'token': 'https://nid.naver.com/oauth2.0/token',
+        'userinfo': 'https://openapi.naver.com/v1/nid/me',
+        # 카카오와 같은 이유로 scope 를 보내지 않는다(제공 정보는 콘솔에서 정한다).
+        'scope': '',
+        # PKCE 지원이 공식 문서로 확인되지 않았다. 미지원 서버에 code_challenge 를 보내면
+        # 조용히 무시되지만, 확인 전까지는 끄고 client_secret + state 로 간다.
+        'pkce': False,
+        # 네이버에는 prompt 가 없다 — 재인증으로 계정을 다시 고르게 한다.
+        'select': {'auth_type': 'reauthenticate'},
+        'parse': _parse_naver,
     },
 }
 
@@ -163,11 +194,11 @@ def _begin_flow(provider: str, member_no: int | None) -> RedirectResponse:
     if cfg['scope']:
         params['scope'] = cfg['scope']
     if member_no is not None:
-        # 연결 모드에서만 계정 선택 화면을 강제한다. 브라우저에 프로바이더 세션이 있으면
+        # 연결 모드에서만 계정을 다시 고르게 한다. 브라우저에 프로바이더 세션이 있으면
         # 선택 없이 그대로 승인돼, 사용자는 자기 계정에 "어느 계정이 붙는지" 모른 채 확정하게
         # 된다. 연결은 새 로그인 수단을 영구히 부여하는 일이라 의식적으로 고르게 한다.
         # (로그인 모드는 잘못 골라도 로그아웃하면 그만이라 마찰을 더하지 않는다.)
-        params['prompt'] = 'select_account'
+        params.update(cfg['select'])
     if cfg['pkce']:
         challenge = base64.urlsafe_b64encode(
             hashlib.sha256(verifier.encode('ascii')).digest()
