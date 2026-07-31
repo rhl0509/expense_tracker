@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useQueryClient } from '@tanstack/react-query';
-import { login } from '@/lib/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getSocialProviders, login } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/providers/ToastProvider';
 import styles from './login.module.css';
@@ -18,6 +18,31 @@ const LOGO_W = Math.round(LOGO_H * LOGO_RATIO);
 // 자동 로그인(세션 지속)은 백엔드 login() 이 지원하지 않는다. 대신 클라이언트에서 아이디만
 // 기억해 다음 방문에 채운다 — 서버 변경 없이 실제로 동작하는 범위로 좁힌 것.
 const SAVED_ID_KEY = 'login_saved_id';
+
+// 소셜 콜백이 ?social_error=<code> 로 돌려보낸 실패를 사용자 문구로 옮긴다.
+// 코드 상세(백엔드 routes/social_auth.py)와 쌍이다.
+const SOCIAL_ERRORS: Record<string, string> = {
+  denied: '로그인이 취소되었습니다.',
+  state: '요청이 만료되었습니다. 다시 시도해주세요.',
+  exchange: '로그인 처리에 실패했습니다. 잠시 후 다시 시도해주세요.',
+  profile: '계정 정보를 가져오지 못했습니다.',
+  email_taken: '이미 가입된 이메일입니다. 기존 아이디로 로그인한 뒤 마이페이지에서 연결해주세요.',
+  disabled: '지원하지 않는 로그인 방식입니다.',
+  inactive: '이용이 제한된 계정입니다.',
+};
+
+const SOCIAL_LABELS: Record<string, string> = {
+  google: 'Google로 계속하기',
+  kakao: '카카오로 계속하기',
+  naver: '네이버로 계속하기',
+};
+
+// 각 프로바이더 브랜드 지침의 기본 색. 다크모드에서도 그대로 둔다(브랜드 색 변형 금지).
+const SOCIAL_STYLES: Record<string, CSSProperties> = {
+  google: { background: '#ffffff', color: '#1f1f1f', border: '1px solid #dadce0' },
+  kakao: { background: '#FEE500', color: '#191919', border: '1px solid #FEE500' },
+  naver: { background: '#03C75A', color: '#ffffff', border: '1px solid #03C75A' },
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,6 +65,20 @@ export default function LoginPage() {
   useEffect(() => {
     const saved = localStorage.getItem(SAVED_ID_KEY);
     if (saved) { setUserId(saved); setRememberId(true); }
+  }, []);
+
+  // 설정된 소셜 프로바이더만 버튼을 그린다(미설정이면 섹션 자체가 없다).
+  const { data: social } = useQuery({ queryKey: ['social-providers'], queryFn: getSocialProviders });
+
+  // 소셜 콜백 실패(?social_error=..)를 토스트로 알리고 URL 을 정리한다.
+  // useSearchParams 는 Suspense 경계를 요구하므로 location 에서 직접 읽는다.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('social_error');
+    if (code) {
+      toast(SOCIAL_ERRORS[code] ?? '소셜 로그인에 실패했습니다.', 'error');
+      router.replace('/login');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -135,6 +174,30 @@ export default function LoginPage() {
           </button>
           <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => router.push('/register')}>회원가입</button>
         </form>
+
+        {(social?.providers?.length ?? 0) > 0 && (
+          <div style={{ marginTop: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ flex: 1, height: 1, background: 'var(--card-border)' }} />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>또는</span>
+              <span style={{ flex: 1, height: 1, background: 'var(--card-border)' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+              {social!.providers.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={styles.btn}
+                  style={{ ...SOCIAL_STYLES[p], fontWeight: 600 }}
+                  // XHR 이 아니라 전체 페이지 이동 — 서버가 프로바이더로 302 시킨다.
+                  onClick={() => { window.location.href = `/auth/social/${p}/start`; }}
+                >
+                  {SOCIAL_LABELS[p] ?? p}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <p className={styles.foot}>© 2026 AI가계부</p>
       </section>

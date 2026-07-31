@@ -20,7 +20,7 @@ Caddy만 외부에 열리고 frontend·backend는 컨테이너 내부 네트워�
 - `app.py` `BIND_HOST` env (컨테이너에서 `0.0.0.0`)
 - `database/db_connection.py` `DB_SSL_CA` 설정 시 TLS 연결
 - `requirements.txt` 버전 고정
-- `schema.sql` — 빈 DB에 한 번에 적용하는 완성 스키마(migrations 001~013 반영)
+- `schema.sql` — 빈 DB에 한 번에 적용하는 완성 스키마(migrations 001~014 반영)
 - `seeds/merchant_catalog.sql` — 전역 가맹점 분류 카탈로그 데이터(선택). 스키마와 분리된 **데이터** 시드
 - BYOK: 서버 공용 AI 키 없음(사용자별 키). `AI_ENC_KEY`로 암호화(미설정 시 `SECRET_KEY` 파생)
 - 가맹점 자동분류: 런타임은 `merchant_catalog`(전역 캐시) **조회만** 한다 — 배포본은 AI를 호출하지 않는다. 카탈로그는 로컬에서 `tools/curate_merchant_catalog.py`로 선큐레이션(로컬 LLM)해 시드로 넣는다
@@ -40,7 +40,7 @@ docker compose up --build
 ### 1. RDS (MySQL) 먼저 — 잠그고 시작
 - db.t3.micro, MySQL 8. **Public access 차단.**
 - 보안그룹: 3306을 **EC2 보안그룹에서만** 허용(전체 공개 금지).
-- 스키마 적재: `schema.sql`(완성 스키마 — 001~013 반영, 전체 테이블 포함)을 빈 RDS 에 한 번 적용: `mysql -h <RDS엔드포인트> -u <user> -p <db> < schema.sql`. 이후 **새로 추가되는** 마이그레이션만 번호순으로 적용한다. (증분 마이그레이션만으론 베이스 테이블이 안 생겨 빈 DB 구축이 실패한다.)
+- 스키마 적재: `schema.sql`(완성 스키마 — 001~014 반영, 전체 테이블 포함)을 빈 RDS 에 한 번 적용: `mysql -h <RDS엔드포인트> -u <user> -p <db> < schema.sql`. 이후 **새로 추가되는** 마이그레이션만 번호순으로 적용한다. (증분 마이그레이션만으론 베이스 테이블이 안 생겨 빈 DB 구축이 실패한다.)
 - (선택) 전역 가맹점 카탈로그 시드: `mysql -h <RDS엔드포인트> -u <user> -p <db> < seeds/merchant_catalog.sql`. **스키마 뒤, 데이터로 적용**한다. 재적용 안전(`ON DUPLICATE KEY UPDATE`). 이 시드가 있어야 신규 사용자가 첫 명세서부터 자동분류 혜택을 본다. 없어도 앱은 정상 동작(룰 + 기타).
 - RDS CA 번들을 EC2에 두고 `DB_SSL_CA`로 지정.
 
@@ -64,6 +64,16 @@ DOMAIN=<도메인>
 BIND_HOST=0.0.0.0
 ```
 
+소셜 로그인(선택 — 켜려면 전부 설정):
+```
+APP_BASE_URL=https://<도메인>          # redirect_uri 기준. 미설정이면 소셜 전체 비활성
+GOOGLE_CLIENT_ID= / GOOGLE_CLIENT_SECRET=
+KAKAO_CLIENT_ID= / KAKAO_CLIENT_SECRET=   # 카카오 콘솔에서 client_secret '사용' 필수
+```
+- 각 프로바이더 콘솔에 `https://<도메인>/auth/social/{provider}/callback` 을 redirect_uri 로 등록한다.
+- 카카오 이메일(account_email) 동의항목은 비즈 앱 심사가 필요할 수 있다 — 승인 전에도 동작한다
+  (이메일이 안 오면 가입 시 자체 이메일 인증으로 대체). 네이버는 검수 확인 후 후속.
+
 ### 4. 기동 + DNS
 ```bash
 docker compose up -d --build
@@ -79,6 +89,7 @@ docker compose up -d --build
 - [ ] RDS public 차단 + 보안그룹 EC2 한정 + `DB_SSL_CA` 설정 (③)
 - [ ] `.env`는 git·이미지에 포함 금지(`.dockerignore`·`.gitignore` 확인)
 - [ ] `SMTP_HOST/SMTP_USER/SMTP_PASSWORD` 설정(회원가입 이메일 인증·비밀번호 찾기 코드 발송). 미설정 시 프로덕션에선 발송이 실패한다(mailer fail-closed) — 인증/복구 흐름이 SMTP에 의존
+- [ ] (소셜 사용 시) 프로바이더 콘솔의 redirect_uri 등록 목록에 개발·스테이징 URI 가 남아있지 않은지 — 남으면 그게 오픈 리다이렉트다
 
 ## 아직 안 한 것 (배포 후/별도)
 

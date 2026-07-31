@@ -1,4 +1,4 @@
--- schema.sql — 완성 스키마 (migrations 001~013 이 반영된 전체 구조).
+-- schema.sql — 완성 스키마 (migrations 001~014 가 반영된 전체 구조).
 -- 빈 DB(RDS 등)에 이 파일 하나로 스키마를 세운다. 이후 새 마이그레이션만 순차 적용.
 -- 생성 방식: SHOW CREATE TABLE 덤프 (AUTO_INCREMENT 시작값은 제거).
 
@@ -126,12 +126,26 @@ CREATE TABLE `member_email_credentials` (
   CONSTRAINT `fk_mec_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE `member_social_accounts` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `member_id` int unsigned NOT NULL,
+  `provider` varchar(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'google | kakao | naver',
+  `provider_user_id` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '프로바이더의 불변 식별자(google sub / kakao id / naver id)',
+  `provider_email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '프로바이더가 알려준 이메일. 참고·지원용이며 신원 판단에 쓰지 않는다',
+  `linked_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_login_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_provider_user` (`provider`,`provider_user_id`),
+  UNIQUE KEY `uq_member_provider` (`member_id`,`provider`),
+  CONSTRAINT `fk_msa_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CREATE TABLE `members` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'PK',
-  `user_id` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '로그인 아이디',
-  `password_hash` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '암호화된 비밀번호',
+  `user_id` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '로그인 아이디. 소셜 전용 회원은 NULL',
+  `password_hash` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '암호화된 비밀번호. 소셜 전용 회원은 NULL',
   `name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '이름',
-  `email` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '이메일',
+  `email` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '소유가 확인된 이메일만 저장. 미확인이면 NULL',
   `phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '전화번호',
   `role` enum('free','basic','premium','pro','admin') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'free',
   `status` enum('active','inactive','suspended') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'active' COMMENT '계정 상태',

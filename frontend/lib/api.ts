@@ -60,6 +60,25 @@ export const verifyEmailCode = (email: string, code: string) =>
 
 export const logout = () => fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
 
+// ── 소셜 로그인 ────────────────────────────────────────────────────────
+// 시작(/auth/social/{p}/start·/link)은 fetch 가 아니라 전체 페이지 이동으로 연다 —
+// 302 로 프로바이더에 다녀와야 하므로 XHR 로는 안 된다.
+export const getSocialProviders = () =>
+  req<{ providers: string[] }>('/auth/social/providers');
+
+// 콜백이 세션에 남긴 가입 대기 정보. needs_email 이면 이메일 인증(send/verifyEmailCode)이 필요.
+export const getSocialPending = () =>
+  req<{ provider: string; name: string | null; email: string | null; needs_email: boolean }>(
+    '/auth/social/pending');
+
+export const socialComplete = (data: { name?: string; terms_agreed: boolean; privacy_agreed: boolean }) =>
+  req<{ message: string }>('/auth/social/complete', {
+    method: 'POST', body: JSON.stringify(data),
+  });
+
+export const unlinkSocial = (provider: string) =>
+  req<{ message: string }>(`/auth/social/${provider}`, { method: 'DELETE' });
+
 // ── 아이디/비밀번호 찾기 (이메일 인증) ──────────────────────────────────
 // 회원가입 인증과 같은 세션-코드 흐름이지만 엔드포인트·세션 키가 분리돼 있다.
 export const findIdSendCode = (name: string, email: string) =>
@@ -67,8 +86,9 @@ export const findIdSendCode = (name: string, email: string) =>
     method: 'POST', body: JSON.stringify({ name, email }),
   });
 
+// user_id 가 null 이면 소셜 전용 회원(아이디 없음) — 화면이 안내 문구로 분기한다.
 export const findIdVerify = (name: string, email: string, code: string) =>
-  req<{ user_id: string; created_at: string | null }>('/auth/find-id/verify', {
+  req<{ user_id: string | null; created_at: string | null }>('/auth/find-id/verify', {
     method: 'POST', body: JSON.stringify({ name, email, code }),
   });
 
@@ -88,8 +108,12 @@ export const resetPwConfirm = (new_password: string) =>
   });
 
 // 마이페이지 전용. /me 는 세션만 읽는 인증 가드라 이메일·핸드폰이 없다.
+// has_password=false 는 소셜 전용 회원(비밀번호 변경 섹션 숨김), social 은 연결된 프로바이더.
 export const getProfile = () =>
-  req<{ user_id: string; name: string; email: string; phone: string | null }>('/auth/profile');
+  req<{
+    user_id: string | null; name: string; email: string | null; phone: string | null;
+    has_password: boolean; social: string[];
+  }>('/auth/profile');
 
 // phone 은 E.164('+821012345678') 또는 빈 문자열(등록 해제). 정규화는 프론트가 한다.
 export const updatePhone = (phone: string) =>

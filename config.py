@@ -71,6 +71,28 @@ class Config:
     SMTP_PASSWORD = os.getenv('SMTP_PASSWORD') or ''
     SMTP_FROM     = (os.getenv('SMTP_FROM') or os.getenv('SMTP_USER') or '').strip()
 
+    # ── 소셜 로그인 (OAuth) ──────────────────────────────────────────────
+    # redirect_uri 를 만드는 권위 있는 기준. 요청 헤더(Host/X-Forwarded-Host)에서 유도하지
+    # 않는다 — XFF 는 클라이언트가 보내면 그대로 통과한다(routes/auth.py check-user-id 주석의
+    # 실측). 미설정이면 소셜 로그인 전체가 비활성이다.
+    APP_BASE_URL = (os.getenv('APP_BASE_URL') or '').strip().rstrip('/')
+    GOOGLE_CLIENT_ID     = (os.getenv('GOOGLE_CLIENT_ID') or '').strip()
+    GOOGLE_CLIENT_SECRET = (os.getenv('GOOGLE_CLIENT_SECRET') or '').strip()
+    KAKAO_CLIENT_ID      = (os.getenv('KAKAO_CLIENT_ID') or '').strip()
+    KAKAO_CLIENT_SECRET  = (os.getenv('KAKAO_CLIENT_SECRET') or '').strip()
+    NAVER_CLIENT_ID      = (os.getenv('NAVER_CLIENT_ID') or '').strip()
+    NAVER_CLIENT_SECRET  = (os.getenv('NAVER_CLIENT_SECRET') or '').strip()
+
+    @classmethod
+    def social_providers(cls) -> tuple[str, ...]:
+        """client_id/secret 이 모두 설정된 프로바이더만. APP_BASE_URL 없으면 전체 비활성."""
+        if not cls.APP_BASE_URL:
+            return ()
+        return tuple(
+            p for p in ('google', 'kakao', 'naver')
+            if getattr(cls, f'{p.upper()}_CLIENT_ID') and getattr(cls, f'{p.upper()}_CLIENT_SECRET')
+        )
+
     @classmethod
     def local_llm_enabled(cls) -> bool:
         return bool(cls.LOCAL_LLM_URL)

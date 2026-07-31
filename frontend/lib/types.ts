@@ -1,6 +1,6 @@
 export interface User {
   user_no: number;
-  user_id: string;
+  user_id: string | null;   // 소셜 전용 회원은 아이디가 없다
   user_name: string;
   account_book_id: number | null;
 }
@@ -14,7 +14,7 @@ export interface Book {
 export interface BookMember {
   member_id: number;
   role: 'owner' | 'member';
-  user_id: string;
+  user_id: string | null;   // 소셜 전용 회원은 아이디가 없다
   name: string;
 }
 

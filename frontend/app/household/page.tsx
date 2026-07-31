@@ -121,7 +121,8 @@ export default function HouseholdPage() {
               <div key={m.member_id} style={rowStyle}>
                 <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text)' }}>
                   {m.name}
-                  <span style={{ marginLeft: 6, fontSize: '0.72rem', color: 'var(--text-3)' }}>@{m.user_id}</span>
+                  {/* 소셜 전용 회원은 user_id 가 없다 — '@null' 을 그리지 않는다. */}
+                  {m.user_id && <span style={{ marginLeft: 6, fontSize: '0.72rem', color: 'var(--text-3)' }}>@{m.user_id}</span>}
                 </span>
                 <span style={{ fontSize: '0.72rem', fontWeight: 600, color: m.role === 'owner' ? 'var(--accent)' : 'var(--text-3)' }}>
                   {m.role === 'owner' ? '가구장' : '멤버'}

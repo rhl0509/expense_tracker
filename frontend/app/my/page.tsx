@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
-import { changePassword, getProfile, updatePhone } from '@/lib/api';
+import { changePassword, getProfile, getSocialProviders, unlinkSocial, updatePhone } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/providers/ToastProvider';
 import CardCredentials from '@/components/CardCredentials';
@@ -44,6 +44,17 @@ export default function MyPage() {
   const qc = useQueryClient();
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: getProfile });
 
+  // 소셜 연결/해제 콜백이 ?social=linked / ?social_error=link_conflict 로 돌아온다.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('social') === 'linked') toast('소셜 계정이 연결되었습니다.', 'success');
+    else if (q.get('social_error') === 'link_conflict') toast('이미 다른 계정에 연결된 소셜 계정입니다.', 'error');
+    else return;
+    window.history.replaceState(null, '', '/my');
+    qc.invalidateQueries({ queryKey: ['profile'] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -79,7 +90,7 @@ export default function MyPage() {
         <SectionCard icon="person" title="계정">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Row label="이름" value={profile?.name ?? user?.user_name ?? '-'} />
-            <Row label="아이디" value={profile?.user_id ?? user?.user_id ?? '-'} />
+            <Row label="아이디" value={profile ? (profile.user_id ?? '소셜 로그인 계정') : user?.user_id ?? '-'} />
             <Row label="이메일" value={profile?.email ?? '-'} />
             <PhoneEditor
               phone={profile?.phone ?? null}
@@ -92,7 +103,8 @@ export default function MyPage() {
           </div>
         </SectionCard>
 
-        {/* 비밀번호 변경 */}
+        {/* 비밀번호 변경 — 소셜 전용 회원(비밀번호 없음)에게는 보이지 않는다. */}
+        {profile?.has_password !== false && (
         <SectionCard icon="lock" title="비밀번호 변경">
           {/* noValidate: 브라우저 기본 검증 말풍선을 끄고 아래 submit()의 앱 스타일 에러로 안내한다. */}
           <form onSubmit={submit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -123,6 +135,13 @@ export default function MyPage() {
             </button>
           </form>
         </SectionCard>
+        )}
+
+        {/* 소셜 로그인 연결 — 이메일 충돌(email_taken) 시 수동 연결이 유일한 해결 경로다. */}
+        <SocialAccounts
+          linked={profile?.social ?? []}
+          onChanged={() => qc.invalidateQueries({ queryKey: ['profile'] })}
+        />
 
         {/* ── 연동 서비스 그룹 ── 신원(계정·비번)과 외부 연동을 시각적으로 가른다. */}
         <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
@@ -151,6 +170,59 @@ export default function MyPage() {
         </div>
       </div>
     </>
+  );
+}
+
+const SOCIAL_PROVIDER_NAMES: Record<string, string> = { google: '구글', kakao: '카카오', naver: '네이버' };
+
+// 소셜 계정 연결 관리. 연결은 전체 페이지 이동(/auth/social/{p}/link → 프로바이더 302),
+// 해제는 API 호출. 마지막 로그인 수단 해제는 서버가 400 으로 거부한다.
+function SocialAccounts({ linked, onChanged }: { linked: string[]; onChanged: () => void }) {
+  const toast = useToast();
+  // 서버에 설정된 프로바이더만 행을 그린다(미설정 서버면 카드 자체가 안 보인다).
+  const { data } = useQuery({ queryKey: ['social-providers'], queryFn: getSocialProviders });
+
+  const unlinkMut = useMutation({
+    mutationFn: (provider: string) => unlinkSocial(provider),
+    onSuccess: () => { toast('연결이 해제되었습니다.', 'success'); onChanged(); },
+    onError: (e) => toast((e as Error).message || '해제에 실패했습니다.', 'error'),
+  });
+
+  const providers = data?.providers ?? [];
+  if (providers.length === 0) return null;
+
+  return (
+    <SectionCard icon="link" title="소셜 로그인 연결">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {providers.map((p) => {
+          const isLinked = linked.includes(p);
+          return (
+            <div key={p} style={rowStyle}>
+              <span style={{ fontSize: '0.875rem', color: 'var(--text)', flex: 1 }}>
+                {SOCIAL_PROVIDER_NAMES[p] ?? p}
+              </span>
+              <span style={{ fontSize: '0.72rem', color: isLinked ? 'var(--accent)' : 'var(--text-3)' }}>
+                {isLinked ? '연결됨' : '미연결'}
+              </span>
+              {isLinked ? (
+                <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}
+                  onClick={() => unlinkMut.mutate(p)} disabled={unlinkMut.isPending}>
+                  해제
+                </button>
+              ) : (
+                <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}
+                  onClick={() => { window.location.href = `/auth/social/${p}/link`; }}>
+                  연결
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ ...noticeStyle, marginTop: 12 }}>
+        연결해두면 해당 소셜 계정으로도 로그인할 수 있습니다.
+      </div>
+    </SectionCard>
   );
 }
 

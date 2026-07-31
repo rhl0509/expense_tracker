@@ -33,8 +33,8 @@ export default function FindIdPage() {
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
-  // 찾은 아이디. null 이면 아직 결과 없음.
-  const [found, setFound] = useState<{ user_id: string; created_at: string | null } | null>(null);
+  // 찾은 아이디. null 이면 아직 결과 없음. found.user_id 가 null 이면 소셜 전용 회원.
+  const [found, setFound] = useState<{ user_id: string | null; created_at: string | null } | null>(null);
 
   const email = `${emailLocal.trim()}@${emailDomain.trim()}`;
   const emailComplete = emailLocal.trim() !== '' && emailDomain.trim() !== '';
@@ -95,17 +95,32 @@ export default function FindIdPage() {
 
         {found ? (
           <div className={styles.stack}>
-            <div className={styles.result}>
-              <p className={styles.resultLabel}>회원님의 아이디</p>
-              <div className={styles.resultId}>{found.user_id}</div>
-              {found.created_at && <p className={styles.resultMeta}>가입일 {found.created_at}</p>}
-            </div>
+            {/* 소셜 전용 회원은 아이디가 없다 — 본인 인증을 통과한 사람에게만 보이는 안내라
+                가입 수단 노출 걱정 없이 정확히 알려준다. */}
+            {found.user_id === null ? (
+              <div className={styles.result}>
+                <p className={styles.resultLabel}>소셜 로그인 계정입니다</p>
+                <p className={styles.resultMeta}>
+                  이 이메일은 소셜 로그인(구글·카카오 등)으로 가입되어 아이디가 없습니다.
+                  로그인 화면의 소셜 버튼으로 로그인해주세요.
+                </p>
+                {found.created_at && <p className={styles.resultMeta}>가입일 {found.created_at}</p>}
+              </div>
+            ) : (
+              <div className={styles.result}>
+                <p className={styles.resultLabel}>회원님의 아이디</p>
+                <div className={styles.resultId}>{found.user_id}</div>
+                {found.created_at && <p className={styles.resultMeta}>가입일 {found.created_at}</p>}
+              </div>
+            )}
             <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => router.push('/login')}>
               로그인하러 가기
             </button>
-            <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => router.push('/reset-password')}>
-              비밀번호 찾기
-            </button>
+            {found.user_id !== null && (
+              <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => router.push('/reset-password')}>
+                비밀번호 찾기
+              </button>
+            )}
           </div>
         ) : (
           <form onSubmit={(e) => { e.preventDefault(); if (codeSent) verify(); else sendCode(); }} noValidate>

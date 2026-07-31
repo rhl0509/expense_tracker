@@ -12,6 +12,7 @@ const ICON_PATHS: Record<string, ReactNode> = {
   card: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18" /></>,
   trend: <><path d="M22 7l-8.5 8.5-5-5L2 17" /><path d="M16 7h6v6" /></>,
   alert: <><path d="M10.3 4.3 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></>,
+  link: <><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7" /></>,
 };
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {

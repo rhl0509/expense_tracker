@@ -165,7 +165,8 @@ async def register(request: Request):
             )
             for row in cursor.fetchall():
                 # 컬럼 콜레이션이 대소문자 무시라 파이썬 비교도 맞춘다.
-                if row['user_id'].lower() == user_id.lower():
+                # 소셜 전용 회원은 user_id 가 NULL — 이메일로 걸린 행이므로 이메일 중복이다.
+                if row['user_id'] and row['user_id'].lower() == user_id.lower():
                     return JSONResponse({"error": "이미 존재하는 아이디입니다."}, status_code=409)
                 return JSONResponse({"error": "이미 가입된 이메일입니다."}, status_code=409)
             cursor.execute(
@@ -619,7 +620,9 @@ async def reset_password_confirm(request: Request):
             if not row:
                 request.session.pop('pw_reset_ok', None)
                 return JSONResponse({"error": "계정을 찾을 수 없습니다."}, status_code=404)
-            if check_password_hash(row['password_hash'], new_pw):
+            # 소셜 전용(password_hash NULL)은 user_id 매칭 탓에 구조상 여기 못 오지만, 가드가
+            # 그 추론을 다시 하는 것보다 싸다.
+            if row['password_hash'] and check_password_hash(row['password_hash'], new_pw):
                 return JSONResponse({"error": "이전과 다른 비밀번호를 입력하세요."}, status_code=400)
             cursor.execute(
                 "UPDATE members SET password_hash = %s WHERE id = %s",
@@ -659,7 +662,9 @@ async def login(request: Request):
                 (user_id,)
             )
             user = cursor.fetchone()
-            if user and check_password_hash(user['password_hash'], password):
+            # 소셜 전용 회원은 password_hash 가 NULL — check_password_hash 가 예외를 내면
+            # 500/401 이 갈려 "이 아이디는 소셜 전용"을 알려주는 오라클이 된다. 401 로 통일.
+            if user and user['password_hash'] and check_password_hash(user['password_hash'], password):
                 _login_reset(user_id)
                 book_id = get_default_book_id(cursor, user['id'])
                 if book_id is None:
@@ -700,13 +705,22 @@ async def profile(request: Request, _=Depends(api_require_login)):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            user_no = get_user_no(request)
             cursor.execute(
-                "SELECT user_id, name, email, phone FROM members WHERE id = %s",
-                (get_user_no(request),),
+                "SELECT user_id, name, email, phone, password_hash IS NOT NULL AS has_password "
+                "FROM members WHERE id = %s",
+                (user_no,),
             )
             row = cursor.fetchone()
-        if not row:
-            return JSONResponse({"error": "사용자를 찾을 수 없습니다."}, status_code=404)
+            if not row:
+                return JSONResponse({"error": "사용자를 찾을 수 없습니다."}, status_code=404)
+            # 마이페이지의 소셜 연결 관리 + 소셜 전용 계정의 비밀번호 섹션 숨김에 쓴다.
+            cursor.execute(
+                "SELECT provider FROM member_social_accounts WHERE member_id = %s ORDER BY provider",
+                (user_no,),
+            )
+            row['has_password'] = bool(row['has_password'])
+            row['social'] = [r['provider'] for r in cursor.fetchall()]
         return row
     finally:
         conn.close()
@@ -756,6 +770,8 @@ async def change_password(request: Request, _=Depends(api_require_login)):
             row = cursor.fetchone()
             if not row:
                 return JSONResponse({"error": "사용자를 찾을 수 없습니다."}, status_code=404)
+            if row['password_hash'] is None:
+                return JSONResponse({"error": "소셜 로그인 계정에는 비밀번호가 없습니다."}, status_code=400)
             # 현재 비밀번호를 먼저 확인한다. 세션만으로 바꾸게 두면 자리를 비운 사이
             # 남이 계정을 통째로 가져간다.
             if not check_password_hash(row['password_hash'], current):

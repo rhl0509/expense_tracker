@@ -19,6 +19,7 @@ from routes.utils import LoginRequired, ApiLoginRequired, BookAccessDenied, Inge
 
 # ── 라우터 import ──
 from routes.auth import router as auth_router
+from routes.social_auth import router as social_auth_router
 from routes.household import router as household_router
 from routes.transaction import router as transaction_router
 from routes.card_import import router as card_import_router
@@ -73,6 +74,7 @@ async def _ingest_auth_failed_handler(request: Request, exc: IngestAuthFailed):
 
 # ── 라우터 등록 ──
 app.include_router(auth_router, prefix="/auth")
+app.include_router(social_auth_router, prefix="/auth")
 app.include_router(household_router, prefix="/auth")
 app.include_router(transaction_router, prefix="/transaction")
 app.include_router(card_import_router, prefix="/transaction")
