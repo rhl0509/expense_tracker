@@ -4,8 +4,8 @@ import Link from 'next/link';
 // AppShell 밖에서 쓴다(서버 컴포넌트).
 
 export const LEGAL_EFFECTIVE_DATE = '2026-07-20'; // 시행일 = 약관 버전. 백엔드 auth.py의 *_VERSION과 함께 올린다.
-export const LEGAL_OPERATOR = '[운영자명]';       // TODO: 배포 전 실제 운영자명으로 교체
-export const LEGAL_CONTACT = '[연락 이메일]';     // TODO: 배포 전 실제 연락처로 교체
+export const LEGAL_OPERATOR = 'rho';
+export const LEGAL_CONTACT = 'rhl0509@gmail.com';
 
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
