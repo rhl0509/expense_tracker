@@ -362,6 +362,16 @@ def test_link_and_unlink(monkeypatch, cleanup):
     assert c.get('/auth/profile').json()['social'] == []
 
 
+def test_logout_clears_oauth_tx():
+    """링크 권한을 담은 oauth_tx 는 로그아웃과 함께 죽어야 한다 — 공용 PC 에서 로그아웃 후
+    타인이 남은 tx 로 피해자 계정에 자기 소셜을 연결하는 시나리오 차단(보안 리뷰 Medium)."""
+    c = TestClient(app)
+    _start(c, 'google')
+    assert c.cookies.get('oauth_tx')
+    c.post('/auth/logout')
+    assert c.cookies.get('oauth_tx') is None
+
+
 def test_unlink_last_method_blocked(monkeypatch, cleanup):
     c = TestClient(app)
     _signup_via_google(c, monkeypatch, cleanup)  # 소셜 전용(비밀번호 없음)

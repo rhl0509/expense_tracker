@@ -692,7 +692,13 @@ async def login(request: Request):
 @router.post('/logout')
 async def logout(request: Request):
     request.session.clear()
-    return {"message": "로그아웃되었습니다."}
+    resp = JSONResponse({"message": "로그아웃되었습니다."})
+    # 소셜 연결(link) 플로우가 남긴 oauth_tx 는 "이 회원에게 소셜 신원을 붙일 권한"을 담은
+    # 무상태 서명 쿠키다. 콜백은 세션을 읽지 않아 로그아웃을 모르므로, 세션과 함께 여기서
+    # 죽인다 — 안 지우면 공용 PC 에서 로그아웃 후 10분간 타인이 자기 소셜을 연결할 수 있다.
+    # (쿠키 이름·경로는 routes/social_auth.py 와 쌍 — 순환 import 회피로 리터럴 사용.)
+    resp.delete_cookie('oauth_tx', path='/auth/social')
+    return resp
 
 
 @router.get('/profile')

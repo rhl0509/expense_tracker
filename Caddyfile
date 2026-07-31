@@ -26,10 +26,11 @@
 	}
 	# 가입·로그인 남용(봇 대량가입·무차별 대입) 방어. Caddy 는 실제 원격 IP({remote_host})를
 	# 직접 알므로 X-Forwarded-For 위조 걱정 없이 앞단에서 IP 당 제한한다.
+	# /auth/social/complete 도 회원을 만드는 경로라 /auth/register 와 같은 제한을 받는다.
 	rate_limit {
 		zone auth_zone {
 			match {
-				path /auth/register /auth/login
+				path /auth/register /auth/login /auth/social/complete
 			}
 			key {remote_host}
 			events 10

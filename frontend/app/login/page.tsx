@@ -75,7 +75,9 @@ export default function LoginPage() {
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('social_error');
     if (code) {
-      toast(SOCIAL_ERRORS[code] ?? '소셜 로그인에 실패했습니다.', 'error');
+      // hasOwn 가드: code 는 URL 에서 온 임의 문자열이라 '__proto__' 등 상속 멤버가
+      // 인덱싱을 통과하면 toast 에 객체가 들어가 렌더가 죽는다.
+      toast(Object.hasOwn(SOCIAL_ERRORS, code) ? SOCIAL_ERRORS[code] : '소셜 로그인에 실패했습니다.', 'error');
       router.replace('/login');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

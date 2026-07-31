@@ -100,3 +100,9 @@ class Config:
     @classmethod
     def smtp_enabled(cls) -> bool:
         return bool(cls.SMTP_HOST and cls.SMTP_USER and cls.SMTP_PASSWORD)
+
+
+# 배포 정합 가드: https 로 서빙한다면서 쿠키 Secure 를 끄면 세션·oauth_tx(state) 쿠키가
+# 평문 채널에 노출될 수 있다. 설정 실수는 조용히 돌리지 말고 기동을 거부한다(SECRET_KEY 와 동일 방침).
+if Config.APP_BASE_URL.startswith('https://') and not Config.SESSION_COOKIE_SECURE:
+    raise RuntimeError("APP_BASE_URL 이 https 인데 SESSION_COOKIE_SECURE=false 입니다. 둘을 맞추세요.")

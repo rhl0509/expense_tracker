@@ -135,7 +135,9 @@ def _begin_flow(provider: str, member_no: int | None) -> RedirectResponse:
     쿠키에 담는다. member_no 는 로그인이 확인된 시점에 서명되므로 콜백에서 권위가 있다."""
     cfg = _provider_config(provider)
     if cfg is None:
-        logger.warning("소셜 시작: 미설정 프로바이더 호출 provider=%s", provider)
+        # 경로변수는 사용자 통제 문자열 — 화이트리스트 밖이면 원문을 로그에 넣지 않는다.
+        logger.warning("소셜 시작: 미설정 프로바이더 호출 provider=%s",
+                       provider if provider in _PROVIDERS else '<unknown>')
         return _redirect('/login?social_error=disabled')
 
     state = secrets.token_urlsafe(32)
@@ -215,28 +217,33 @@ async def social_callback(provider: str, request: Request):
     """프로바이더가 돌아오는 유일한 등록 redirect_uri. 세션 쿠키를 읽지 않는다 —
     입력은 쿼리스트링과 oauth_tx 서명 쿠키 두 곳뿐이다. 검증 실패 사유는 사용자에게
     구분해 알리지 않는다(전부 social_error=state)."""
+    # 경로변수·쿼리는 사용자 통제 문자열이다 — 로그에는 화이트리스트 통과분/절단본만 쓴다
+    # (개행 포함 임의 문자열을 그대로 찍으면 로그 라인 위조가 된다).
+    safe_provider = provider if provider in _PROVIDERS else '<unknown>'
+
     # a. 사용자 거부·프로바이더 에러
-    if request.query_params.get('error'):
+    err_param = request.query_params.get('error')
+    if err_param:
         logger.info("소셜 콜백 거부/에러 provider=%s error=%s",
-                    provider, request.query_params.get('error'))
+                    safe_provider, err_param.replace('\n', ' ').replace('\r', ' ')[:32])
         return _redirect('/login?social_error=denied')
 
     # b~e. tx 쿠키(서명·TTL·프로바이더·state) 검증 — 하나라도 실패면 즉시 종료
     raw_tx = request.cookies.get(_TX_COOKIE)
     if not raw_tx:
-        logger.warning("소셜 콜백: oauth_tx 쿠키 없음 provider=%s", provider)
+        logger.warning("소셜 콜백: oauth_tx 쿠키 없음 provider=%s", safe_provider)
         return _redirect('/login?social_error=state')
     try:
         tx = _signer.loads(raw_tx, max_age=_TX_MAX_AGE)
     except BadSignature:
-        logger.warning("소셜 콜백: oauth_tx 서명 불일치 또는 만료 provider=%s", provider)
+        logger.warning("소셜 콜백: oauth_tx 서명 불일치 또는 만료 provider=%s", safe_provider)
         return _redirect('/login?social_error=state')
     if tx.get('p') != provider:
-        logger.warning("소셜 콜백: 프로바이더 교차 tx=%s path=%s", tx.get('p'), provider)
+        logger.warning("소셜 콜백: 프로바이더 교차 tx=%s path=%s", tx.get('p'), safe_provider)
         return _redirect('/login?social_error=state')
     state = request.query_params.get('state') or ''
     if not state or not hmac.compare_digest(tx.get('s', ''), state):
-        logger.warning("소셜 콜백: state 불일치 provider=%s — 로그인 CSRF 시도 후보", provider)
+        logger.warning("소셜 콜백: state 불일치 provider=%s — 로그인 CSRF 시도 후보", safe_provider)
         return _redirect('/login?social_error=state')
     code = request.query_params.get('code') or ''
     if not code:
@@ -249,19 +256,25 @@ async def social_callback(provider: str, request: Request):
     # f~g. 토큰 교환 + userinfo (여기부터 tx 는 소모된 것으로 취급 — 응답이 무엇이든 쿠키 삭제)
     try:
         payload = await _fetch_profile(cfg, code, tx.get('v', ''))
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError):
+        # ValueError: 200 + 비JSON 응답(.json() 의 JSONDecodeError 포함) — WAF/프록시 HTML 등.
         # 응답 본문을 로그에 찍지 않는다 — 코드·시크릿이 에코될 수 있다.
         logger.error("소셜 토큰 교환/프로필 조회 실패 provider=%s", provider)
         return _redirect('/login?social_error=exchange')
 
-    puid, email, email_verified, name = cfg['parse'](payload)
+    try:
+        puid, email, email_verified, name = cfg['parse'](payload)
+    except Exception:
+        # 프로바이더가 dict 가 아닌·구조가 다른 페이로드를 줘도 500 + tx 잔류로 끝나지 않게.
+        logger.error("소셜 프로필 파싱 실패 provider=%s", provider)
+        return _redirect('/login?social_error=profile')
     if not puid:
         logger.error("소셜 프로필에 식별자 없음 provider=%s", provider)
         return _redirect('/login?social_error=profile')
 
     conn = get_db_connection()
     try:
-        with conn.cursor() as cursor:
+        with conn.cursor() as cursor:  # DB 오류도 500 + tx 잔류 대신 안내 리다이렉트로 (아래 except)
             # ── 링크 모드: 로그인 상태에서 시작된 연결 ──
             if 'm' in tx:
                 member_no = tx['m']
@@ -316,6 +329,8 @@ async def social_callback(provider: str, request: Request):
                 if book_id is None:
                     book_id = _create_book_for_member(cursor, member_no, row['name'])
                 conn.commit()
+                # 신원 부여 전에 세션을 비운다 — 이전 신원의 복구 티켓·대기 상태가 남지 않게.
+                request.session.clear()
                 request.session['user_no'] = member_no
                 request.session['user_id'] = row['user_id']       # 소셜 전용이면 None
                 request.session['user_name'] = row['name']
@@ -329,6 +344,10 @@ async def social_callback(provider: str, request: Request):
                 if cursor.fetchone():
                     logger.info("소셜 신규: 검증 이메일이 기존 계정과 충돌 provider=%s", provider)
                     return _redirect('/login?social_error=email_taken')
+    except Exception:
+        conn.rollback()
+        logger.exception("소셜 콜백 DB 처리 실패 provider=%s", provider)
+        return _redirect('/login?social_error=exchange')
     finally:
         conn.close()
 
@@ -434,9 +453,8 @@ async def social_complete(request: Request):
     finally:
         conn.close()
 
-    request.session.pop('social_pending', None)
-    request.session.pop('email_verified', None)
-    request.session.pop('email_verify', None)
+    # 신원 부여 전에 세션을 통째로 비운다(pending·인증 흔적 정리 겸 이전 신원 잔여 키 제거).
+    request.session.clear()
     request.session['user_no'] = new_member_id
     request.session['user_id'] = None
     request.session['user_name'] = name
