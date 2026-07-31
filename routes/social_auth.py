@@ -44,9 +44,13 @@ logger = logging.getLogger(__name__)
 _TX_COOKIE = 'oauth_tx'
 _TX_MAX_AGE = 600       # start→callback 허용 시간(초) = 10분
 _PENDING_TTL = 900      # 콜백→가입 완료(동의·이메일 인증) 허용 시간(초) = 15분
+_LINK_COOKIE = 'link_tx'
+_LINK_MAX_AGE = 600     # 콜백→연결 확인 허용 시간(초) = 10분
 
 # 세션과 다른 salt — 세션 쿠키를 oauth_tx 로 재사용하는 교차를 서명 수준에서 막는다.
+# link_tx 도 salt 를 분리해 oauth_tx 를 연결 승인 티켓으로 되돌려쓰지 못하게 한다.
 _signer = URLSafeTimedSerializer(Config.SECRET_KEY, salt='social-oauth-tx')
+_link_signer = URLSafeTimedSerializer(Config.SECRET_KEY, salt='social-link-tx')
 
 
 def _parse_google(payload: dict) -> tuple[str | None, str | None, bool, str | None]:
@@ -96,7 +100,11 @@ _PROVIDERS = {
         'authorize': 'https://kauth.kakao.com/oauth/authorize',
         'token': 'https://kauth.kakao.com/oauth/token',
         'userinfo': 'https://kapi.kakao.com/v2/user/me',
-        'scope': 'account_email profile_nickname',
+        # 카카오는 scope 를 보내지 않는다 — 동의항목은 콘솔에서 정하고, 여기서 요청한 항목이
+        # 콘솔에서 '사용 안 함'/'권한 없음'이면 인가 단계에서 KOE205 로 거절당한다
+        # (account_email 은 비즈 앱 전환 전까지 영구히 '권한 없음'이다). 생략하면 콘솔에
+        # 설정된 항목으로 동의 화면이 뜨므로 콘솔 설정과 코드가 어긋날 일이 없다.
+        'scope': '',
         'pkce': True,
         'parse': _parse_kakao,
     },
@@ -151,8 +159,15 @@ def _begin_flow(provider: str, member_no: int | None) -> RedirectResponse:
         'redirect_uri': cfg['redirect_uri'],
         'response_type': 'code',
         'state': state,
-        'scope': cfg['scope'],
     }
+    if cfg['scope']:
+        params['scope'] = cfg['scope']
+    if member_no is not None:
+        # 연결 모드에서만 계정 선택 화면을 강제한다. 브라우저에 프로바이더 세션이 있으면
+        # 선택 없이 그대로 승인돼, 사용자는 자기 계정에 "어느 계정이 붙는지" 모른 채 확정하게
+        # 된다. 연결은 새 로그인 수단을 영구히 부여하는 일이라 의식적으로 고르게 한다.
+        # (로그인 모드는 잘못 골라도 로그아웃하면 그만이라 마찰을 더하지 않는다.)
+        params['prompt'] = 'select_account'
     if cfg['pkce']:
         challenge = base64.urlsafe_b64encode(
             hashlib.sha256(verifier.encode('ascii')).digest()
@@ -289,21 +304,24 @@ async def social_callback(provider: str, request: Request):
                         return _redirect('/my?social=linked')  # 이미 연결됨 — 멱등
                     logger.warning("소셜 연결 충돌: 타 회원 소유 provider=%s", provider)
                     return _redirect('/my?social_error=link_conflict')
-                try:
-                    cursor.execute(
-                        "INSERT INTO member_social_accounts "
-                        "(member_id, provider, provider_user_id, provider_email) "
-                        "VALUES (%s, %s, %s, %s)",
-                        (member_no, provider, puid, email),
-                    )
-                    conn.commit()
-                except pymysql.err.IntegrityError:
-                    # uq_member_provider(같은 프로바이더의 다른 계정을 이미 연결) 또는 경합.
-                    conn.rollback()
-                    logger.warning("소셜 연결 실패(UNIQUE) provider=%s", provider)
-                    return _redirect('/my?social_error=link_conflict')
-                # 세션은 건드리지 않는다 — 미변경이면 Set-Cookie 가 나가지 않아 로그인 유지.
-                return _redirect('/my?social=linked')
+                # 여기서 바로 붙이지 않는다 — 연결은 새 로그인 수단을 영구히 부여하는 일이라,
+                # 어느 소셜 계정이 붙는지 보고 승인하는 단계를 거친다(/social/link/confirm).
+                # 대기 정보를 세션에 쓰면 안 된다: 콜백 요청에는 SameSite=Strict 세션 쿠키가
+                # 실려오지 않아 빈 세션이 저장되고, 그 순간 사용자가 로그아웃된다. 그래서
+                # oauth_tx 와 같은 방식의 전용 서명 쿠키로 나른다.
+                resp = _redirect('/my?social_confirm=1')
+                resp.set_cookie(
+                    _LINK_COOKIE,
+                    _link_signer.dumps({
+                        'm': member_no, 'p': provider, 'u': puid, 'e': email, 'n': name,
+                    }),
+                    max_age=_LINK_MAX_AGE,
+                    httponly=True,
+                    secure=Config.SESSION_COOKIE_SECURE,
+                    samesite='lax',
+                    path='/auth/social',
+                )
+                return resp
 
             # ── 로그인 모드 ──
             cursor.execute(
@@ -460,6 +478,67 @@ async def social_complete(request: Request):
     request.session['user_name'] = name
     request.session['account_book_id'] = book_id
     return JSONResponse({"message": "가입이 완료되었습니다."}, status_code=201)
+
+
+def _link_pending(request: Request) -> dict | None:
+    """link_tx 쿠키를 읽어 승인 대기 중인 연결을 돌려준다. 서명·TTL 이 유효하고 **로그인한
+    본인의 티켓일 때만** 유효로 본다 — 남의 브라우저에 남은 티켓을 다른 계정이 승인할 수 없다."""
+    raw = request.cookies.get(_LINK_COOKIE)
+    if not raw:
+        return None
+    try:
+        pending = _link_signer.loads(raw, max_age=_LINK_MAX_AGE)
+    except BadSignature:
+        return None
+    return pending if pending.get('m') == get_user_no(request) else None
+
+
+def _clear_link(payload: dict, status_code: int = 200) -> JSONResponse:
+    resp = JSONResponse(payload, status_code=status_code)
+    resp.delete_cookie(_LINK_COOKIE, path='/auth/social')
+    return resp
+
+
+@router.get('/social/link/pending')
+async def social_link_pending(request: Request, _=Depends(api_require_login)):
+    """연결 확인 모달이 "어느 소셜 계정인지"를 보여주기 위해 읽는다."""
+    pending = _link_pending(request)
+    if not pending:
+        return JSONResponse({"error": "연결 요청이 만료되었습니다. 다시 시도해주세요."}, status_code=400)
+    return {"provider": pending['p'], "email": pending['e'], "name": pending['n']}
+
+
+@router.post('/social/link/confirm')
+async def social_link_confirm(request: Request, _=Depends(api_require_login)):
+    """사용자가 승인한 시점에 실제로 연결한다."""
+    pending = _link_pending(request)
+    if not pending:
+        return JSONResponse({"error": "연결 요청이 만료되었습니다. 다시 시도해주세요."}, status_code=400)
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO member_social_accounts "
+                "(member_id, provider, provider_user_id, provider_email) "
+                "VALUES (%s, %s, %s, %s)",
+                (pending['m'], pending['p'], pending['u'], pending['e']),
+            )
+        conn.commit()
+    except pymysql.err.IntegrityError:
+        # uq_provider_user(그 사이 타 회원이 선점) 또는 uq_member_provider(같은 프로바이더 중복).
+        conn.rollback()
+        logger.warning("소셜 연결 실패(UNIQUE) provider=%s", pending['p'])
+        return _clear_link({"error": "이미 연결된 계정입니다."}, status_code=409)
+    finally:
+        conn.close()
+    return _clear_link({"message": "소셜 계정이 연결되었습니다."})
+
+
+@router.post('/social/link/cancel')
+async def social_link_cancel(request: Request, _=Depends(api_require_login)):
+    """승인하지 않고 닫았을 때 티켓을 즉시 버린다(안 지우면 새로고침마다 다시 묻는다)."""
+    return _clear_link({"message": "연결을 취소했습니다."})
 
 
 @router.delete('/social/{provider}')

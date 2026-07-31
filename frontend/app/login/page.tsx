@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent, type CSSProperties } from 'react';
+import { useState, useEffect, FormEvent, type CSSProperties, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -42,6 +42,25 @@ const SOCIAL_STYLES: Record<string, CSSProperties> = {
   google: { background: '#ffffff', color: '#1f1f1f', border: '1px solid #dadce0' },
   kakao: { background: '#FEE500', color: '#191919', border: '1px solid #FEE500' },
   naver: { background: '#03C75A', color: '#ffffff', border: '1px solid #03C75A' },
+};
+
+// 브랜드 로고는 인라인 SVG로 둔다 — 배포 CSP·오프라인에서도 깨지지 않고 파일이 늘지 않는다.
+// 구글 브랜드 지침상 'G' 마크는 4색 원본을 그대로 쓰고 색을 바꾸지 않는다.
+const SOCIAL_ICONS: Record<string, ReactNode> = {
+  google: (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z" />
+      <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
+      <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z" />
+      <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
+    </svg>
+  ),
+  // 카카오 말풍선 심볼. 노란 버튼 위에 올라가므로 지정색(#191919) 단색으로 쓴다.
+  kakao: (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#191919" d="M12 3C6.48 3 2 6.48 2 10.8c0 2.79 1.86 5.24 4.65 6.62-.2.72-.74 2.66-.85 3.07-.13.51.19.5.4.36.16-.11 2.6-1.77 3.66-2.49.69.1 1.4.15 2.14.15 5.52 0 10-3.48 10-7.71S17.52 3 12 3z" />
+    </svg>
+  ),
 };
 
 export default function LoginPage() {
@@ -190,10 +209,15 @@ export default function LoginPage() {
                   key={p}
                   type="button"
                   className={styles.btn}
-                  style={{ ...SOCIAL_STYLES[p], fontWeight: 600 }}
+                  style={{
+                    ...SOCIAL_STYLES[p], fontWeight: 600,
+                    // 로고와 문구를 한 덩어리로 가운데 정렬한다(로고 없는 프로바이더도 그대로 중앙).
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  }}
                   // XHR 이 아니라 전체 페이지 이동 — 서버가 프로바이더로 302 시킨다.
                   onClick={() => { window.location.href = `/auth/social/${p}/start`; }}
                 >
+                  {SOCIAL_ICONS[p]}
                   {SOCIAL_LABELS[p] ?? p}
                 </button>
               ))}

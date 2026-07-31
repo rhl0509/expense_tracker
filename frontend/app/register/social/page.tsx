@@ -210,12 +210,14 @@ export default function SocialRegisterPage() {
                       {sendingCode ? '발송 중...' : '인증코드 발송'}
                     </button>
                   )}
-                  <p className={styles.hint}>계정 찾기·복구에 쓰이는 이메일입니다.</p>
+                  {/* .hint 는 .form 직계(gap 14px)에서 -8px 로 당기는 전제라, gap 없는 이 안에서는
+                      마진을 직접 준다 — 안 그러면 위 요소를 파고든다. */}
+                  <p className={styles.hint} style={{ margin: '6px 0 0' }}>계정 찾기·복구에 쓰이는 이메일입니다.</p>
                 </>
               ) : (
                 <>
                   <input className={styles.input} type="email" value={pending.email ?? ''} disabled />
-                  <p className={styles.hint}>{providerName} 계정에서 확인된 이메일입니다.</p>
+                  <p className={styles.hint} style={{ margin: '6px 0 0' }}>{providerName} 계정에서 확인된 이메일입니다.</p>
                 </>
               )}
             </div>

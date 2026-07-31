@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
-import { changePassword, getProfile, getSocialProviders, unlinkSocial, updatePhone } from '@/lib/api';
+import {
+  cancelSocialLink, changePassword, confirmSocialLink, getProfile, getSocialLinkPending,
+  getSocialProviders, unlinkSocial, updatePhone,
+} from '@/lib/api';
+import ConfirmModal from '@/components/ConfirmModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/providers/ToastProvider';
 import CardCredentials from '@/components/CardCredentials';
@@ -44,14 +48,24 @@ export default function MyPage() {
   const qc = useQueryClient();
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: getProfile });
 
-  // 소셜 연결/해제 콜백이 ?social=linked / ?social_error=link_conflict 로 돌아온다.
+  // 연결 승인 대기(?social_confirm=1)면 모달을 띄우고, 그 외 콜백 결과는 토스트로 알린다.
+  const [linkAsk, setLinkAsk] = useState<
+    { provider: string; email: string | null; name: string | null } | null
+  >(null);
+
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
-    if (q.get('social') === 'linked') toast('소셜 계정이 연결되었습니다.', 'success');
-    else if (q.get('social_error') === 'link_conflict') toast('이미 다른 계정에 연결된 소셜 계정입니다.', 'error');
-    else return;
+    if (q.get('social_confirm') === '1') {
+      getSocialLinkPending()
+        .then((p) => setLinkAsk({ provider: p.provider, email: p.email, name: p.name }))
+        .catch((e) => toast((e as Error).message || '연결 요청이 만료되었습니다.', 'error'));
+    } else if (q.get('social') === 'linked') {
+      toast('소셜 계정이 연결되었습니다.', 'success');
+      qc.invalidateQueries({ queryKey: ['profile'] });
+    } else if (q.get('social_error') === 'link_conflict') {
+      toast('이미 다른 계정에 연결된 소셜 계정입니다.', 'error');
+    } else return;
     window.history.replaceState(null, '', '/my');
-    qc.invalidateQueries({ queryKey: ['profile'] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -169,6 +183,52 @@ export default function MyPage() {
           <DangerZone />
         </div>
       </div>
+
+      {/* 연결 승인 — 어느 소셜 계정이 이 계정에 붙는지 보여주고 확정한다.
+          연결은 새 로그인 수단을 영구히 부여하는 일이라 클릭 한 번으로 끝내지 않는다. */}
+      <ConfirmModal
+        open={linkAsk !== null}
+        variant="warning"
+        icon="🔗"
+        title={`${SOCIAL_PROVIDER_NAMES[linkAsk?.provider ?? ''] ?? linkAsk?.provider} 계정을 연결할까요?`}
+        message={
+          <>
+            {/* 방금 고른 계정이 무엇인지 보여준다. 카카오는 이메일·닉네임을 안 줄 수 있어
+                (비즈 앱 아님·동의항목 미설정) 그때는 없는 정보를 지어내지 않고 그대로 알린다. */}
+            {linkAsk?.name || linkAsk?.email ? (
+              <strong style={{ color: 'var(--text)' }}>
+                {[linkAsk.name, linkAsk.email].filter(Boolean).join(' · ')}
+              </strong>
+            ) : (
+              <>방금 선택한 계정</>
+            )}
+            으로도 이 가계부에 로그인할 수 있게 됩니다.
+            {!linkAsk?.name && !linkAsk?.email && (
+              <><br />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>
+                  이 제공자는 계정 정보를 알려주지 않아 여기에 표시할 수 없습니다.
+                </span>
+              </>
+            )}
+          </>
+        }
+        confirmText="연결"
+        onConfirm={async () => {
+          try {
+            await confirmSocialLink();
+            toast('소셜 계정이 연결되었습니다.', 'success');
+            qc.invalidateQueries({ queryKey: ['profile'] });
+          } catch (e) {
+            toast((e as Error).message || '연결에 실패했습니다.', 'error');
+          }
+          setLinkAsk(null);
+        }}
+        onCancel={async () => {
+          setLinkAsk(null);
+          // 티켓을 지운다 — 안 지우면 새로고침마다 다시 묻는다.
+          await cancelSocialLink().catch(() => {});
+        }}
+      />
     </>
   );
 }

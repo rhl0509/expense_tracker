@@ -185,6 +185,16 @@ def test_start_sets_tx_cookie_and_pkce():
 # ──────────────────────────────────────────────────────────────────
 # 콜백 공격 표면
 # ──────────────────────────────────────────────────────────────────
+def test_kakao_start_sends_no_scope():
+    """카카오는 scope 를 보내지 않는다 — 콘솔에서 '사용 안 함'인 항목을 요청하면 KOE205 로
+    거절당한다(account_email 은 비즈 앱 전까지 '권한 없음'). 되살아나면 로그인이 통째로 막힌다."""
+    c = TestClient(app)
+    _, loc = _start(c, 'kakao')
+    q = parse_qs(urlparse(loc).query)
+    assert 'scope' not in q
+    assert q['code_challenge_method'] == ['S256']
+
+
 def test_callback_without_tx_cookie_fails(monkeypatch):
     _mock_profile(monkeypatch, _google_payload('s1', 'a@b.com'))
     c = TestClient(app)  # start 를 거치지 않음 — 북마크·직접 접근
@@ -334,18 +344,80 @@ def test_verified_email_conflict_no_auto_link(monkeypatch, cleanup):
 # ──────────────────────────────────────────────────────────────────
 # 연결(링크)·해제
 # ──────────────────────────────────────────────────────────────────
+def _link_roundtrip(client, monkeypatch, sub, email='whatever@x.com'):
+    """link 시작 → 콜백까지. 승인 대기 상태로 남기고 리다이렉트 응답을 돌려준다."""
+    _mock_profile(monkeypatch, _google_payload(sub, email))
+    r = client.get('/auth/social/google/link', follow_redirects=False)
+    assert r.status_code == 302
+    state = parse_qs(urlparse(r.headers['location']).query)['state'][0]
+    return _callback(client, 'google', state)
+
+
+def test_link_forces_account_selection(cleanup):
+    """연결 모드는 계정 선택 화면을 강제한다 — 프로바이더 세션이 있으면 선택 없이 승인돼
+    어느 계정이 붙는지 모른 채 확정된다. 로그인 모드에는 붙이지 않는다."""
+    _, uid, _ = _insert_password_member(cleanup)
+    c = TestClient(app)
+    c.post('/auth/login', json={'user_id': uid, 'password': 'Test1234!'})
+    r = c.get('/auth/social/kakao/link', follow_redirects=False)
+    assert parse_qs(urlparse(r.headers['location']).query)['prompt'] == ['select_account']
+    assert 'prompt' not in parse_qs(urlparse(_start(TestClient(app), 'kakao')[1]).query)
+
+
+def test_link_requires_confirmation(monkeypatch, cleanup):
+    """연결은 콜백만으로 붙지 않는다 — 승인해야 실제로 연결된다(새 로그인 수단 부여이므로)."""
+    member_id, uid, _ = _insert_password_member(cleanup)
+    c = TestClient(app)
+    c.post('/auth/login', json={'user_id': uid, 'password': 'Test1234!'})
+    sub = 'confirm_' + uuid.uuid4().hex[:8]
+    r = _link_roundtrip(c, monkeypatch, sub)
+    assert r.headers['location'] == '/my?social_confirm=1'
+    # 아직 DB 에 없다
+    assert c.get('/auth/profile').json()['social'] == []
+    # 대기 정보는 어느 계정인지 보여준다
+    assert c.get('/auth/social/link/pending').json()['provider'] == 'google'
+    # 승인해야 붙는다
+    assert c.post('/auth/social/link/confirm').status_code == 200
+    assert c.get('/auth/profile').json()['social'] == ['google']
+    # 티켓은 소모됐다
+    assert c.post('/auth/social/link/confirm').status_code == 400
+
+
+def test_link_cancel_discards_ticket(monkeypatch, cleanup):
+    member_id, uid, _ = _insert_password_member(cleanup)
+    c = TestClient(app)
+    c.post('/auth/login', json={'user_id': uid, 'password': 'Test1234!'})
+    _link_roundtrip(c, monkeypatch, 'cancel_' + uuid.uuid4().hex[:8])
+    assert c.post('/auth/social/link/cancel').status_code == 200
+    assert c.get('/auth/social/link/pending').status_code == 400
+    assert c.get('/auth/profile').json()['social'] == []
+
+
+def test_link_ticket_not_usable_by_other_member(monkeypatch, cleanup):
+    """남의 브라우저에 남은 연결 티켓을 다른 계정이 승인할 수 없다."""
+    _, uid_a, _ = _insert_password_member(cleanup)
+    _, uid_b, _ = _insert_password_member(cleanup)
+    c = TestClient(app)
+    c.post('/auth/login', json={'user_id': uid_a, 'password': 'Test1234!'})
+    _link_roundtrip(c, monkeypatch, 'steal_' + uuid.uuid4().hex[:8])
+    # 로그아웃 없이 B 로 갈아탄다 — 로그아웃은 link_tx 를 지우므로, 그 경로로는 티켓 자체가
+    # 사라져 member_no 대조가 실행되지 않는다. 여기선 티켓이 살아 있는 상태를 만들어 대조를 검증한다.
+    c.post('/auth/login', json={'user_id': uid_b, 'password': 'Test1234!'})
+    assert c.cookies.get('link_tx')  # 티켓이 실제로 남아 있는 상태여야 의미가 있다
+    assert c.get('/auth/social/link/pending').status_code == 400
+    assert c.post('/auth/social/link/confirm').status_code == 400
+    assert c.get('/auth/profile').json()['social'] == []
+
+
 def test_link_and_unlink(monkeypatch, cleanup):
     member_id, uid, _ = _insert_password_member(cleanup)
     c = TestClient(app)
     r = c.post('/auth/login', json={'user_id': uid, 'password': 'Test1234!'})
     assert r.status_code == 200
     sub = 'link_' + uuid.uuid4().hex[:8]
-    _mock_profile(monkeypatch, _google_payload(sub, 'whatever@x.com'))
-    r = c.get('/auth/social/google/link', follow_redirects=False)
-    assert r.status_code == 302
-    state = parse_qs(urlparse(r.headers['location']).query)['state'][0]
-    r = _callback(c, 'google', state)
-    assert r.headers['location'] == '/my?social=linked'
+    r = _link_roundtrip(c, monkeypatch, sub)
+    assert r.headers['location'] == '/my?social_confirm=1'
+    assert c.post('/auth/social/link/confirm').status_code == 200
     assert c.get('/auth/profile').json()['social'] == ['google']
     # 타 회원이 같은 소셜 신원을 자기 계정에 연결 시도 → 충돌
     member2, uid2, _ = _insert_password_member(cleanup)

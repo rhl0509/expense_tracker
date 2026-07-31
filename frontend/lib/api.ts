@@ -79,6 +79,16 @@ export const socialComplete = (data: { name?: string; terms_agreed: boolean; pri
 export const unlinkSocial = (provider: string) =>
   req<{ message: string }>(`/auth/social/${provider}`, { method: 'DELETE' });
 
+// 연결(link)은 바로 붙지 않고 승인 단계를 거친다 — 어느 소셜 계정인지 보고 확정한다.
+export const getSocialLinkPending = () =>
+  req<{ provider: string; email: string | null; name: string | null }>('/auth/social/link/pending');
+
+export const confirmSocialLink = () =>
+  req<{ message: string }>('/auth/social/link/confirm', { method: 'POST' });
+
+export const cancelSocialLink = () =>
+  req<{ message: string }>('/auth/social/link/cancel', { method: 'POST' });
+
 // ── 아이디/비밀번호 찾기 (이메일 인증) ──────────────────────────────────
 // 회원가입 인증과 같은 세션-코드 흐름이지만 엔드포인트·세션 키가 분리돼 있다.
 export const findIdSendCode = (name: string, email: string) =>

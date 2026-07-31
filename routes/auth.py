@@ -698,6 +698,8 @@ async def logout(request: Request):
     # 죽인다 — 안 지우면 공용 PC 에서 로그아웃 후 10분간 타인이 자기 소셜을 연결할 수 있다.
     # (쿠키 이름·경로는 routes/social_auth.py 와 쌍 — 순환 import 회피로 리터럴 사용.)
     resp.delete_cookie('oauth_tx', path='/auth/social')
+    # 승인 대기 중인 연결 티켓도 같은 성격이라 함께 버린다.
+    resp.delete_cookie('link_tx', path='/auth/social')
     return resp
 
 
