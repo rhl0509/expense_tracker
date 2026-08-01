@@ -46,3 +46,8 @@ AGENTS.md
 
 # 선큐레이션 검수 산출물 — rho 개인 가맹점명이 담긴 로컬 검토용 파일(전역 시드가 아님)
 tools/out/
+
+# RDS CA 번들 등 배포용 비밀 파일. 디렉터리는 유지하고 내용물만 제외한다
+# (docker-compose 가 ./secrets 를 컨테이너에 마운트한다).
+secrets/*
+!secrets/.gitkeep

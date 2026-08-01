@@ -4,10 +4,28 @@
 # 로컬 검증 시: 호스트의 MySQL 을 쓰려면 .env 에 DB_HOST=host.docker.internal 로 둔다.
 # 배포 시: DB_HOST=<RDS 엔드포인트>, SESSION_COOKIE_SECURE=true, AI_ENC_KEY/DB_SSL_CA 설정.
 
+# 컨테이너 로그는 회전시킨다 — 기본 json-file 은 무제한이라, 액세스 로그가 쌓여 루트
+# 볼륨이 차면 /health 의 디스크 검사가 503 을 내고 백엔드가 스스로 unhealthy 가 된다.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   backend:
     build: .
     restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      # RDS TLS 검증용 CA 를 담는 디렉터리. DB_SSL_CA 는 **컨테이너 안** 경로라 호스트 파일을
+      # 넣어줘야 하고, 안 넣으면 pymysql 이 CA 를 못 찾아 커넥션 풀 초기화가 실패해 백엔드가
+      # 아예 뜨지 않는다. 파일이 아니라 디렉터리를 마운트하는 이유: 파일 직접 마운트는 호스트에
+      # 그 파일이 없을 때 docker 가 같은 이름의 디렉터리를 만들어버려 로컬 검증이 깨진다.
+      # 배포: secrets/rds-ca.pem 을 두고 DB_SSL_CA=/etc/ssl/app/rds-ca.pem.
+      # 로컬: secrets/ 가 비어 있어도 되고 DB_SSL_CA 를 비워두면 TLS 없이 붙는다.
+      # ⚠️ 평문 폴백이 조용히 성공하지 않도록 RDS 파라미터그룹에서 require_secure_transport=ON.
+      - ./secrets:/etc/ssl/app:ro
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DB_HOST: ${DB_HOST}
@@ -37,16 +55,25 @@ services:
       start_period: 20s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Next rewrites 는 빌드 시점에 굳는다 — 런타임 environment 로는 못 바꾼다.
+        BACKEND_URL: "http://backend:5000"
     restart: unless-stopped
-    environment:
-      # 브라우저가 아니라 Next 서버가 백엔드로 프록시하는 주소(compose 내부 네트워크).
-      BACKEND_URL: "http://backend:5000"
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_healthy
     expose:
       - "3000"
+    healthcheck:
+      # 프론트가 죽어도 Caddy 가 계속 그쪽으로 보내지 않도록 상태를 노출한다.
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/login',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # 외부에 노출되는 유일한 서비스. 나머지는 내부 네트워크에만 있다.
   caddy:
@@ -54,17 +81,21 @@ services:
       context: .
       dockerfile: Caddy.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # 발급받은 인증서가 여기 남는다. `docker compose down -v` 는 금지 — 볼륨을 지우면
+      # 재발급을 받아야 하고 Let's Encrypt 실패·발급 한도에 걸릴 수 있다.
       - caddy_data:/data
       - caddy_config:/config
     environment:
       DOMAIN: ${DOMAIN:-localhost}
     depends_on:
-      - frontend
+      frontend:
+        condition: service_healthy
 
 volumes:
   caddy_data:

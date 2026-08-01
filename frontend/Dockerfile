@@ -12,6 +12,13 @@ FROM node:20-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# next.config 의 rewrites 목적지는 **빌드 시점에 평가돼 매니페스트에 문자열로 굳는다**.
+# 런타임 environment 로 주는 BACKEND_URL 은 standalone 서버가 다시 읽지 않으므로,
+# 빌드 인자로 넘겨야 컨테이너 네트워크 주소(backend:5000)가 박힌다. 안 넘기면 기본값
+# 127.0.0.1:8010 이 굳어 프론트 컨테이너가 자기 자신을 호출하고 모든 API 가 실패한다.
+# (백엔드 내부 주소라 시크릿이 아니다 — ARG 로 충분하다.)
+ARG BACKEND_URL=http://backend:5000
+ENV BACKEND_URL=$BACKEND_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
